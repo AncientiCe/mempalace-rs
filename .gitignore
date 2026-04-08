@@ -1,0 +1,18 @@
+/target/
+/.fastembed_cache/
+
+# SQLite runtime/test artifacts
+*.db
+*.db-shm
+*.db-wal
+
+# Environment/secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS-generated files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,321 @@
+//! Palace graph traversal.
+//!
+//! Builds a navigable graph from drawer metadata:
+//!   Nodes = rooms (named ideas)
+//!   Edges = rooms that appear in multiple wings (tunnels)
+//!
+//! Port of palace_graph.py.
+
+use anyhow::Result;
+use rusqlite::Connection;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomNode {
+    pub wings: Vec<String>,
+    pub halls: Vec<String>,
+    pub count: i64,
+    pub dates: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunnelEdge {
+    pub room: String,
+    pub wing_a: String,
+    pub wing_b: String,
+    pub hall: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraversalResult {
+    pub room: String,
+    pub wings: Vec<String>,
+    pub halls: Vec<String>,
+    pub count: i64,
+    pub hop: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connected_via: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TunnelResult {
+    pub room: String,
+    pub wings: Vec<String>,
+    pub halls: Vec<String>,
+    pub count: i64,
+    pub recent: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphStats {
+    pub total_rooms: usize,
+    pub tunnel_rooms: usize,
+    pub total_edges: usize,
+    pub rooms_per_wing: HashMap<String, i64>,
+    pub top_tunnels: Vec<serde_json::Value>,
+}
+
+/// Build the room graph from drawer metadata in the database.
+fn build_graph(conn: &Connection) -> Result<(HashMap<String, RoomNode>, Vec<TunnelEdge>)> {
+    let mut room_data: HashMap<String, (HashSet<String>, HashSet<String>, i64, HashSet<String>)> =
+        HashMap::new();
+
+    let mut stmt = conn.prepare(
+        "SELECT room, wing, source_file, filed_at FROM drawers WHERE room != 'general'",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+        ))
+    })?;
+
+    for row in rows {
+        let (room, wing, source_file, filed_at) = row?;
+        if room.is_empty() || wing.is_empty() {
+            continue;
+        }
+        let entry = room_data.entry(room).or_default();
+        entry.0.insert(wing);
+        // Extract hall from source_file metadata suffix if present
+        if let Some(null_pos) = source_file.find('\x00') {
+            if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&source_file[null_pos + 1..]) {
+                if let Some(hall) = meta.get("hall").and_then(|v| v.as_str()) {
+                    entry.1.insert(hall.to_string());
+                }
+                if let Some(date) = meta.get("date").and_then(|v| v.as_str()) {
+                    entry.3.insert(date.to_string());
+                }
+            }
+        }
+        // Use filed_at date as fallback
+        if let Some(date_part) = filed_at.split('T').next() {
+            entry.3.insert(date_part.to_string());
+        }
+        entry.2 += 1;
+    }
+
+    // Build edges from rooms spanning multiple wings
+    let mut edges = Vec::new();
+    let mut nodes: HashMap<String, RoomNode> = HashMap::new();
+
+    for (room, (wings, halls, count, dates)) in &room_data {
+        let mut sorted_wings: Vec<String> = wings.iter().cloned().collect();
+        sorted_wings.sort();
+
+        if sorted_wings.len() >= 2 {
+            for i in 0..sorted_wings.len() {
+                for j in (i + 1)..sorted_wings.len() {
+                    let hall = halls.iter().next().cloned().unwrap_or_default();
+                    edges.push(TunnelEdge {
+                        room: room.clone(),
+                        wing_a: sorted_wings[i].clone(),
+                        wing_b: sorted_wings[j].clone(),
+                        hall,
+                        count: *count,
+                    });
+                }
+            }
+        }
+
+        let mut sorted_dates: Vec<String> = dates.iter().cloned().collect();
+        sorted_dates.sort();
+        sorted_dates.truncate(5);
+
+        nodes.insert(
+            room.clone(),
+            RoomNode {
+                wings: sorted_wings,
+                halls: halls.iter().cloned().collect(),
+                count: *count,
+                dates: sorted_dates,
+            },
+        );
+    }
+
+    Ok((nodes, edges))
+}
+
+/// Walk the graph from a starting room using BFS.
+pub fn traverse(
+    conn: &Connection,
+    start_room: &str,
+    max_hops: usize,
+) -> Result<serde_json::Value> {
+    let (nodes, _edges) = build_graph(conn)?;
+
+    if !nodes.contains_key(start_room) {
+        let suggestions = fuzzy_match(start_room, &nodes);
+        return Ok(serde_json::json!({
+            "error": format!("Room '{}' not found", start_room),
+            "suggestions": suggestions,
+        }));
+    }
+
+    let start = &nodes[start_room];
+    let mut visited: HashSet<String> = HashSet::new();
+    visited.insert(start_room.to_string());
+
+    let mut results: Vec<serde_json::Value> = vec![serde_json::json!({
+        "room": start_room,
+        "wings": start.wings,
+        "halls": start.halls,
+        "count": start.count,
+        "hop": 0,
+    })];
+
+    let mut frontier: VecDeque<(String, usize)> = VecDeque::new();
+    frontier.push_back((start_room.to_string(), 0));
+
+    while let Some((current_room, depth)) = frontier.pop_front() {
+        if depth >= max_hops {
+            continue;
+        }
+        let current_wings: HashSet<String> = nodes
+            .get(&current_room)
+            .map(|n| n.wings.iter().cloned().collect())
+            .unwrap_or_default();
+
+        for (room, data) in &nodes {
+            if visited.contains(room) {
+                continue;
+            }
+            let shared: Vec<String> = current_wings
+                .iter()
+                .filter(|w| data.wings.contains(*w))
+                .cloned()
+                .collect();
+            if !shared.is_empty() {
+                visited.insert(room.clone());
+                let entry = serde_json::json!({
+                    "room": room,
+                    "wings": data.wings,
+                    "halls": data.halls,
+                    "count": data.count,
+                    "hop": depth + 1,
+                    "connected_via": shared,
+                });
+                results.push(entry);
+                if depth + 1 < max_hops {
+                    frontier.push_back((room.clone(), depth + 1));
+                }
+            }
+        }
+    }
+
+    // Sort by hop ASC, count DESC
+    results.sort_by(|a, b| {
+        let hop_a = a["hop"].as_i64().unwrap_or(0);
+        let hop_b = b["hop"].as_i64().unwrap_or(0);
+        let cnt_a = a["count"].as_i64().unwrap_or(0);
+        let cnt_b = b["count"].as_i64().unwrap_or(0);
+        hop_a.cmp(&hop_b).then(cnt_b.cmp(&cnt_a))
+    });
+    results.truncate(50);
+
+    Ok(serde_json::Value::Array(results))
+}
+
+/// Find rooms that connect two wings (tunnels).
+pub fn find_tunnels(
+    conn: &Connection,
+    wing_a: Option<&str>,
+    wing_b: Option<&str>,
+) -> Result<Vec<TunnelResult>> {
+    let (nodes, _edges) = build_graph(conn)?;
+
+    let mut tunnels: Vec<TunnelResult> = nodes
+        .iter()
+        .filter(|(_, data)| data.wings.len() >= 2)
+        .filter(|(_, data)| {
+            if let Some(wa) = wing_a {
+                if !data.wings.contains(&wa.to_string()) {
+                    return false;
+                }
+            }
+            if let Some(wb) = wing_b {
+                if !data.wings.contains(&wb.to_string()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .map(|(room, data)| TunnelResult {
+            room: room.clone(),
+            wings: data.wings.clone(),
+            halls: data.halls.clone(),
+            count: data.count,
+            recent: data.dates.last().cloned().unwrap_or_default(),
+        })
+        .collect();
+
+    tunnels.sort_by(|a, b| b.count.cmp(&a.count));
+    tunnels.truncate(50);
+    Ok(tunnels)
+}
+
+/// Summary statistics about the palace graph.
+pub fn graph_stats(conn: &Connection) -> Result<GraphStats> {
+    let (nodes, edges) = build_graph(conn)?;
+
+    let tunnel_rooms = nodes.values().filter(|n| n.wings.len() >= 2).count();
+
+    let mut rooms_per_wing: HashMap<String, i64> = HashMap::new();
+    for data in nodes.values() {
+        for w in &data.wings {
+            *rooms_per_wing.entry(w.clone()).or_default() += 1;
+        }
+    }
+
+    let mut top_tunnels: Vec<(&String, &RoomNode)> = nodes
+        .iter()
+        .filter(|(_, n)| n.wings.len() >= 2)
+        .collect();
+    top_tunnels.sort_by(|a, b| b.1.wings.len().cmp(&a.1.wings.len()));
+    top_tunnels.truncate(10);
+
+    let top_tunnels_json: Vec<serde_json::Value> = top_tunnels
+        .iter()
+        .map(|(room, n)| {
+            serde_json::json!({
+                "room": room,
+                "wings": n.wings,
+                "count": n.count,
+            })
+        })
+        .collect();
+
+    Ok(GraphStats {
+        total_rooms: nodes.len(),
+        tunnel_rooms,
+        total_edges: edges.len(),
+        rooms_per_wing,
+        top_tunnels: top_tunnels_json,
+    })
+}
+
+fn fuzzy_match(query: &str, nodes: &HashMap<String, RoomNode>) -> Vec<String> {
+    let query_lower = query.to_lowercase();
+    let mut scored: Vec<(String, i32)> = nodes
+        .keys()
+        .filter_map(|room| {
+            if query_lower.is_empty() {
+                return None;
+            }
+            if room.contains(&query_lower) {
+                return Some((room.clone(), 2));
+            }
+            let query_parts: Vec<&str> = query_lower.split('-').collect();
+            if query_parts.iter().any(|p| room.contains(p)) {
+                return Some((room.clone(), 1));
+            }
+            None
+        })
+        .collect();
+    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.into_iter().take(5).map(|(r, _)| r).collect()
+}
