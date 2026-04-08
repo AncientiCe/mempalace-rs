@@ -28,7 +28,7 @@ serde_json = "1"
 serde_yaml = "0.9"
 
 # Database — bundled SQLite, no system dep
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Embeddings — ONNX Runtime, all-MiniLM-L6-v2, lazy init
 fastembed = "4"
