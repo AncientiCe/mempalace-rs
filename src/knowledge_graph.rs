@@ -9,7 +9,7 @@
 
 use anyhow::{Context, Result};
 use chrono::Local;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -36,9 +36,7 @@ pub struct KgStats {
 }
 
 fn entity_id(name: &str) -> String {
-    name.to_lowercase()
-        .replace(' ', "_")
-        .replace('\'', "")
+    name.to_lowercase().replace(' ', "_").replace('\'', "")
 }
 
 fn normalize_predicate(pred: &str) -> String {
@@ -46,13 +44,8 @@ fn normalize_predicate(pred: &str) -> String {
 }
 
 fn triple_id(sub_id: &str, pred: &str, obj_id: &str) -> String {
-    let hash = blake3::hash(
-        format!(
-            "{sub_id}/{pred}/{obj_id}/{}",
-            Local::now().to_rfc3339()
-        )
-        .as_bytes(),
-    );
+    let hash =
+        blake3::hash(format!("{sub_id}/{pred}/{obj_id}/{}", Local::now().to_rfc3339()).as_bytes());
     format!("t_{sub_id}_{pred}_{obj_id}_{}", &hash.to_hex()[..8])
 }
 
@@ -172,19 +165,22 @@ pub fn query_entity(
             p.push(Box::new(d.to_string()));
         }
         let mut stmt = conn.prepare(&q)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())), |r| {
-            Ok(Triple {
-                direction: "outgoing".into(),
-                subject: name.to_string(),
-                predicate: r.get(0)?,
-                object: r.get(5)?,
-                valid_from: r.get(1)?,
-                valid_to: r.get(2)?,
-                confidence: r.get(3)?,
-                source_closet: r.get(4)?,
-                current: r.get::<_, Option<String>>(2)?.is_none(),
-            })
-        })?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())),
+            |r| {
+                Ok(Triple {
+                    direction: "outgoing".into(),
+                    subject: name.to_string(),
+                    predicate: r.get(0)?,
+                    object: r.get(5)?,
+                    valid_from: r.get(1)?,
+                    valid_to: r.get(2)?,
+                    confidence: r.get(3)?,
+                    source_closet: r.get(4)?,
+                    current: r.get::<_, Option<String>>(2)?.is_none(),
+                })
+            },
+        )?;
         for row in rows {
             results.push(row.context("outgoing triple row")?);
         }
@@ -202,19 +198,22 @@ pub fn query_entity(
             p.push(Box::new(d.to_string()));
         }
         let mut stmt = conn.prepare(&q)?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())), |r| {
-            Ok(Triple {
-                direction: "incoming".into(),
-                subject: r.get(5)?,
-                predicate: r.get(0)?,
-                object: name.to_string(),
-                valid_from: r.get(1)?,
-                valid_to: r.get(2)?,
-                confidence: r.get(3)?,
-                source_closet: r.get(4)?,
-                current: r.get::<_, Option<String>>(2)?.is_none(),
-            })
-        })?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())),
+            |r| {
+                Ok(Triple {
+                    direction: "incoming".into(),
+                    subject: r.get(5)?,
+                    predicate: r.get(0)?,
+                    object: name.to_string(),
+                    valid_from: r.get(1)?,
+                    valid_to: r.get(2)?,
+                    confidence: r.get(3)?,
+                    source_closet: r.get(4)?,
+                    current: r.get::<_, Option<String>>(2)?.is_none(),
+                })
+            },
+        )?;
         for row in rows {
             results.push(row.context("incoming triple row")?);
         }
@@ -245,19 +244,22 @@ pub fn query_relationship(
     }
 
     let mut stmt = conn.prepare(&q)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())), |r| {
-        Ok(Triple {
-            direction: "outgoing".into(),
-            subject: r.get(4)?,
-            predicate: r.get(0)?,
-            object: r.get(5)?,
-            valid_from: r.get(1)?,
-            valid_to: r.get(2)?,
-            confidence: r.get(3)?,
-            source_closet: None,
-            current: r.get::<_, Option<String>>(2)?.is_none(),
-        })
-    })?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())),
+        |r| {
+            Ok(Triple {
+                direction: "outgoing".into(),
+                subject: r.get(4)?,
+                predicate: r.get(0)?,
+                object: r.get(5)?,
+                valid_from: r.get(1)?,
+                valid_to: r.get(2)?,
+                confidence: r.get(3)?,
+                source_closet: None,
+                current: r.get::<_, Option<String>>(2)?.is_none(),
+            })
+        },
+    )?;
     rows.map(|r| r.context("relationship row")).collect()
 }
 
@@ -290,19 +292,22 @@ pub fn timeline(conn: &Connection, entity_name: Option<&str>) -> Result<Vec<Trip
     };
 
     let mut stmt = conn.prepare(&q)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())), |r| {
-        Ok(Triple {
-            direction: "outgoing".into(),
-            subject: r.get(4)?,
-            predicate: r.get(0)?,
-            object: r.get(5)?,
-            valid_from: r.get(1)?,
-            valid_to: r.get(2)?,
-            confidence: r.get(3)?,
-            source_closet: None,
-            current: r.get::<_, Option<String>>(2)?.is_none(),
-        })
-    })?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(p.iter().map(|x| x.as_ref())),
+        |r| {
+            Ok(Triple {
+                direction: "outgoing".into(),
+                subject: r.get(4)?,
+                predicate: r.get(0)?,
+                object: r.get(5)?,
+                valid_from: r.get(1)?,
+                valid_to: r.get(2)?,
+                confidence: r.get(3)?,
+                source_closet: None,
+                current: r.get::<_, Option<String>>(2)?.is_none(),
+            })
+        },
+    )?;
     rows.map(|r| r.context("timeline row")).collect()
 }
 
@@ -315,8 +320,7 @@ pub fn stats(conn: &Connection) -> Result<KgStats> {
         [],
         |r| r.get(0),
     )?;
-    let mut stmt =
-        conn.prepare("SELECT DISTINCT predicate FROM triples ORDER BY predicate")?;
+    let mut stmt = conn.prepare("SELECT DISTINCT predicate FROM triples ORDER BY predicate")?;
     let predicates: Vec<String> = stmt
         .query_map([], |r| r.get(0))?
         .filter_map(|r| r.ok())
@@ -332,10 +336,7 @@ pub fn stats(conn: &Connection) -> Result<KgStats> {
 }
 
 /// Seed the graph from a map of entity facts (port of seed_from_entity_facts).
-pub fn seed_from_entity_facts(
-    conn: &Connection,
-    entity_facts: &serde_json::Value,
-) -> Result<()> {
+pub fn seed_from_entity_facts(conn: &Connection, entity_facts: &serde_json::Value) -> Result<()> {
     let obj = match entity_facts.as_object() {
         Some(o) => o,
         None => return Ok(()),
@@ -353,17 +354,20 @@ pub fn seed_from_entity_facts(
             .unwrap_or("person");
         let mut props = HashMap::new();
         if let Some(g) = facts.get("gender").and_then(|v| v.as_str()) {
-            props.insert("gender".to_string(), serde_json::Value::String(g.to_string()));
+            props.insert(
+                "gender".to_string(),
+                serde_json::Value::String(g.to_string()),
+            );
         }
         if let Some(b) = facts.get("birthday").and_then(|v| v.as_str()) {
-            props.insert("birthday".to_string(), serde_json::Value::String(b.to_string()));
+            props.insert(
+                "birthday".to_string(),
+                serde_json::Value::String(b.to_string()),
+            );
         }
         add_entity(conn, &name, etype, Some(&props))?;
 
-        let birthday = facts
-            .get("birthday")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let birthday = facts.get("birthday").and_then(|v| v.as_str()).unwrap_or("");
 
         if let Some(parent) = facts.get("parent").and_then(|v| v.as_str()) {
             let parent_cap = capitalize(parent);
@@ -382,7 +386,17 @@ pub fn seed_from_entity_facts(
 
         if let Some(partner) = facts.get("partner").and_then(|v| v.as_str()) {
             let partner_cap = capitalize(partner);
-            add_triple(conn, &name, "married_to", &partner_cap, None, None, 1.0, None, None)?;
+            add_triple(
+                conn,
+                &name,
+                "married_to",
+                &partner_cap,
+                None,
+                None,
+                1.0,
+                None,
+                None,
+            )?;
         }
 
         if let Some(interests) = facts.get("interests").and_then(|v| v.as_array()) {

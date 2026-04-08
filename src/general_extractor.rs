@@ -189,10 +189,34 @@ static EMOTION_PATS: Lazy<Vec<Regex>> = Lazy::new(|| {
 
 static POSITIVE_WORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
-        "pride", "proud", "joy", "happy", "love", "loving", "beautiful", "amazing",
-        "wonderful", "incredible", "fantastic", "brilliant", "perfect", "excited",
-        "thrilled", "grateful", "warm", "breakthrough", "success", "works", "working",
-        "solved", "fixed", "nailed", "heart", "hug", "precious", "adore",
+        "pride",
+        "proud",
+        "joy",
+        "happy",
+        "love",
+        "loving",
+        "beautiful",
+        "amazing",
+        "wonderful",
+        "incredible",
+        "fantastic",
+        "brilliant",
+        "perfect",
+        "excited",
+        "thrilled",
+        "grateful",
+        "warm",
+        "breakthrough",
+        "success",
+        "works",
+        "working",
+        "solved",
+        "fixed",
+        "nailed",
+        "heart",
+        "hug",
+        "precious",
+        "adore",
     ]
     .iter()
     .copied()
@@ -201,10 +225,35 @@ static POSITIVE_WORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 
 static NEGATIVE_WORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
-        "bug", "error", "crash", "crashing", "crashed", "fail", "failed", "failing",
-        "failure", "broken", "broke", "breaking", "breaks", "issue", "problem", "wrong",
-        "stuck", "blocked", "unable", "impossible", "missing", "terrible", "horrible",
-        "awful", "worse", "worst", "panic", "disaster", "mess",
+        "bug",
+        "error",
+        "crash",
+        "crashing",
+        "crashed",
+        "fail",
+        "failed",
+        "failing",
+        "failure",
+        "broken",
+        "broke",
+        "breaking",
+        "breaks",
+        "issue",
+        "problem",
+        "wrong",
+        "stuck",
+        "blocked",
+        "unable",
+        "impossible",
+        "missing",
+        "terrible",
+        "horrible",
+        "awful",
+        "worse",
+        "worst",
+        "panic",
+        "disaster",
+        "mess",
     ]
     .iter()
     .copied()
@@ -239,9 +288,7 @@ static TURN_PATS: Lazy<Vec<Regex>> = Lazy::new(|| {
 });
 
 fn score_markers(text: &str, pats: &[Regex]) -> f64 {
-    pats.iter()
-        .map(|p| p.find_iter(text).count() as f64)
-        .sum()
+    pats.iter().map(|p| p.find_iter(text).count() as f64).sum()
 }
 
 fn is_code_line(line: &str) -> bool {
@@ -275,7 +322,11 @@ fn extract_prose(text: &str) -> String {
         }
     }
     let result = prose.join("\n").trim().to_string();
-    if result.is_empty() { text.to_string() } else { result }
+    if result.is_empty() {
+        text.to_string()
+    } else {
+        result
+    }
 }
 
 fn get_sentiment(text: &str) -> i32 {
@@ -283,8 +334,14 @@ fn get_sentiment(text: &str) -> i32 {
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
         .collect();
-    let pos = words.iter().filter(|w| POSITIVE_WORDS.contains(**w)).count() as i32;
-    let neg = words.iter().filter(|w| NEGATIVE_WORDS.contains(**w)).count() as i32;
+    let pos = words
+        .iter()
+        .filter(|w| POSITIVE_WORDS.contains(**w))
+        .count() as i32;
+    let neg = words
+        .iter()
+        .filter(|w| NEGATIVE_WORDS.contains(**w))
+        .count() as i32;
     pos - neg
 }
 
@@ -323,7 +380,11 @@ fn split_into_segments(text: &str) -> Vec<String> {
         .split("\n\n")
         .filter_map(|p| {
             let s = p.trim();
-            if s.is_empty() { None } else { Some(s.to_string()) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_string())
+            }
         })
         .collect();
 
@@ -370,8 +431,14 @@ pub fn extract_memories(text: &str, min_confidence: f64) -> Vec<Memory> {
 
         let scores: [(MemoryType, f64); 5] = [
             (MemoryType::Decision, score_markers(&prose, &DECISION_PATS)),
-            (MemoryType::Preference, score_markers(&prose, &PREFERENCE_PATS)),
-            (MemoryType::Milestone, score_markers(&prose, &MILESTONE_PATS)),
+            (
+                MemoryType::Preference,
+                score_markers(&prose, &PREFERENCE_PATS),
+            ),
+            (
+                MemoryType::Milestone,
+                score_markers(&prose, &MILESTONE_PATS),
+            ),
             (MemoryType::Problem, score_markers(&prose, &PROBLEM_PATS)),
             (MemoryType::Emotional, score_markers(&prose, &EMOTION_PATS)),
         ];
@@ -385,7 +452,13 @@ pub fn extract_memories(text: &str, min_confidence: f64) -> Vec<Memory> {
             continue;
         }
 
-        let length_bonus = if para.len() > 500 { 2.0 } else if para.len() > 200 { 1.0 } else { 0.0 };
+        let length_bonus = if para.len() > 500 {
+            2.0
+        } else if para.len() > 200 {
+            1.0
+        } else {
+            0.0
+        };
         let (best_type, best_raw) = nonzero
             .iter()
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())

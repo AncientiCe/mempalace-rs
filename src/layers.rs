@@ -240,7 +240,13 @@ impl Layer3 {
             } else {
                 snippet
             };
-            lines.push(format!("  [{}] {}/{} (sim={:.3})", i + 1, r.wing, r.room, r.similarity));
+            lines.push(format!(
+                "  [{}] {}/{} (sim={:.3})",
+                i + 1,
+                r.wing,
+                r.room,
+                r.similarity
+            ));
             lines.push(format!("      {snippet}"));
             if !r.source_file.is_empty() {
                 lines.push(format!("      src: {}", r.source_file));

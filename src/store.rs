@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -97,7 +97,11 @@ pub fn add_drawer_with_id(
 
     // Extra metadata (hall, topic, type, agent, date) stored in source_file field as JSON suffix.
     let effective_source = if let Some(meta) = extra_meta {
-        format!("{}\x00{}", source_file, serde_json::to_string(meta).unwrap_or_default())
+        format!(
+            "{}\x00{}",
+            source_file,
+            serde_json::to_string(meta).unwrap_or_default()
+        )
     } else {
         source_file.to_string()
     };
@@ -107,7 +111,16 @@ pub fn add_drawer_with_id(
             "INSERT OR IGNORE INTO drawers
              (id, wing, room, content, embedding, source_file, chunk_index, added_by, filed_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7, ?8)",
-            params![id, wing, room, content, blob, effective_source, added_by, filed_at],
+            params![
+                id,
+                wing,
+                room,
+                content,
+                blob,
+                effective_source,
+                added_by,
+                filed_at
+            ],
         )
         .context("inserting drawer with id")?;
     Ok(rows > 0)
@@ -140,11 +153,7 @@ pub fn count_drawers(conn: &Connection) -> Result<i64> {
 }
 
 /// List drawers filtered by optional wing/room, ordered by filed_at DESC.
-pub fn list_drawers(
-    conn: &Connection,
-    filter: &DrawerFilter,
-    limit: usize,
-) -> Result<Vec<Drawer>> {
+pub fn list_drawers(conn: &Connection, filter: &DrawerFilter, limit: usize) -> Result<Vec<Drawer>> {
     let (where_clause, where_params) = build_where(filter);
     let sql = format!(
         "SELECT id, wing, room, content, source_file, chunk_index, added_by, filed_at, importance
@@ -155,19 +164,22 @@ pub fn list_drawers(
     let mut bind_params: Vec<Box<dyn rusqlite::ToSql>> = where_params;
     bind_params.push(Box::new(limit as i64));
 
-    let rows = stmt.query_map(rusqlite::params_from_iter(bind_params.iter().map(|p| p.as_ref())), |r| {
-        Ok(Drawer {
-            id: r.get(0)?,
-            wing: r.get(1)?,
-            room: r.get(2)?,
-            content: r.get(3)?,
-            source_file: r.get(4)?,
-            chunk_index: r.get(5)?,
-            added_by: r.get(6)?,
-            filed_at: r.get(7)?,
-            importance: r.get(8)?,
-        })
-    })?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(bind_params.iter().map(|p| p.as_ref())),
+        |r| {
+            Ok(Drawer {
+                id: r.get(0)?,
+                wing: r.get(1)?,
+                room: r.get(2)?,
+                content: r.get(3)?,
+                source_file: r.get(4)?,
+                chunk_index: r.get(5)?,
+                added_by: r.get(6)?,
+                filed_at: r.get(7)?,
+                importance: r.get(8)?,
+            })
+        },
+    )?;
 
     rows.map(|r| r.context("reading drawer row")).collect()
 }
@@ -255,7 +267,11 @@ pub fn vector_search(
         })
         .collect();
 
-    scored.sort_by(|a, b| b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(n_results);
     Ok(scored)
 }
@@ -292,10 +308,10 @@ pub fn room_counts(conn: &Connection, wing: Option<&str>) -> Result<HashMap<Stri
         ("SELECT room, COUNT(*) FROM drawers GROUP BY room", vec![])
     };
     let mut stmt = conn.prepare(sql)?;
-    let rows =
-        stmt.query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
-        })?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+    )?;
     rows.map(|r| r.context("room counts")).collect()
 }
 

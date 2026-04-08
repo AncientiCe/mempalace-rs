@@ -37,7 +37,10 @@ pub fn run() -> Result<()> {
         }
     };
 
-    eprintln!("MemPalace MCP Server starting... palace={}", db_path.display());
+    eprintln!(
+        "MemPalace MCP Server starting... palace={}",
+        db_path.display()
+    );
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -258,7 +261,9 @@ fn tool_add_drawer(conn: &Connection, args: &Value) -> Value {
 
     let now = Utc::now().to_rfc3339();
     let drawer_id = {
-        let hash = blake3::hash(format!("{wing}/{room}/{}/{now}", &content[..100.min(content.len())]).as_bytes());
+        let hash = blake3::hash(
+            format!("{wing}/{room}/{}/{now}", &content[..100.min(content.len())]).as_bytes(),
+        );
         format!("drawer_{wing}_{room}_{}", &hash.to_hex()[..16])
     };
 
@@ -304,7 +309,9 @@ fn tool_kg_query(conn: &Connection, args: &Value) -> Value {
     let as_of = str_arg(args, "as_of");
     let direction = str_arg(args, "direction").unwrap_or_else(|| "both".to_string());
     match kg::query_entity(conn, &entity, as_of.as_deref(), &direction) {
-        Ok(facts) => json!({"entity": entity, "as_of": as_of, "facts": facts, "count": facts.len()}),
+        Ok(facts) => {
+            json!({"entity": entity, "as_of": as_of, "facts": facts, "count": facts.len()})
+        }
         Err(e) => json!({"error": e.to_string()}),
     }
 }
@@ -372,14 +379,18 @@ fn tool_kg_invalidate(conn: &Connection, args: &Value) -> Value {
 fn tool_kg_timeline(conn: &Connection, args: &Value) -> Value {
     let entity = str_arg(args, "entity");
     match kg::timeline(conn, entity.as_deref()) {
-        Ok(t) => json!({"entity": entity.unwrap_or_else(|| "all".to_string()), "timeline": t, "count": t.len()}),
+        Ok(t) => {
+            json!({"entity": entity.unwrap_or_else(|| "all".to_string()), "timeline": t, "count": t.len()})
+        }
         Err(e) => json!({"error": e.to_string()}),
     }
 }
 
 fn tool_kg_stats(conn: &Connection) -> Value {
     match kg::stats(conn) {
-        Ok(s) => serde_json::to_value(s).unwrap_or_else(|_| json!({"error": "serialization failed"})),
+        Ok(s) => {
+            serde_json::to_value(s).unwrap_or_else(|_| json!({"error": "serialization failed"}))
+        }
         Err(e) => json!({"error": e.to_string()}),
     }
 }
@@ -491,12 +502,14 @@ fn tool_diary_read(conn: &Connection, args: &Value) -> Value {
                         .source_file
                         .find('\x00')
                         .and_then(|pos| serde_json::from_str(&d.source_file[pos + 1..]).ok());
-                    let date = meta.as_ref()
+                    let date = meta
+                        .as_ref()
                         .and_then(|m| m.get("date"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let topic = meta.as_ref()
+                    let topic = meta
+                        .as_ref()
                         .and_then(|m| m.get("topic"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("general")

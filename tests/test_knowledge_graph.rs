@@ -15,7 +15,18 @@ fn add_entity_and_query() {
 #[test]
 fn add_and_query_triple() {
     let conn = test_db();
-    let tid = add_triple(&conn, "Alice", "loves", "Coffee", Some("2025-01-01"), None, 1.0, None, None).unwrap();
+    let tid = add_triple(
+        &conn,
+        "Alice",
+        "loves",
+        "Coffee",
+        Some("2025-01-01"),
+        None,
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
     assert!(!tid.is_empty());
 
     let facts = query_entity(&conn, "Alice", None, "outgoing").unwrap();
@@ -28,7 +39,18 @@ fn add_and_query_triple() {
 #[test]
 fn invalidate_ends_fact() {
     let conn = test_db();
-    add_triple(&conn, "Bob", "works_at", "Acme", Some("2020-01-01"), None, 1.0, None, None).unwrap();
+    add_triple(
+        &conn,
+        "Bob",
+        "works_at",
+        "Acme",
+        Some("2020-01-01"),
+        None,
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
     invalidate(&conn, "Bob", "works_at", "Acme", Some("2024-06-01")).unwrap();
 
     let facts = query_entity(&conn, "Bob", None, "both").unwrap();
@@ -40,8 +62,30 @@ fn invalidate_ends_fact() {
 #[test]
 fn timeline_returns_ordered_facts() {
     let conn = test_db();
-    add_triple(&conn, "Eve", "joined", "Team", Some("2020-01-01"), None, 1.0, None, None).unwrap();
-    add_triple(&conn, "Eve", "promoted", "Senior", Some("2022-06-01"), None, 1.0, None, None).unwrap();
+    add_triple(
+        &conn,
+        "Eve",
+        "joined",
+        "Team",
+        Some("2020-01-01"),
+        None,
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
+    add_triple(
+        &conn,
+        "Eve",
+        "promoted",
+        "Senior",
+        Some("2022-06-01"),
+        None,
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
 
     let tl = timeline(&conn, Some("Eve")).unwrap();
     assert_eq!(tl.len(), 2);

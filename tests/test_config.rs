@@ -42,7 +42,10 @@ fn env_var_overrides_palace_path() {
     let _lock = ENV_LOCK.lock().unwrap();
     let tmp = TempDir::new().unwrap();
     let custom_path = tmp.path().join("custom_palace");
-    std::env::set_var("MEMPALACE_PALACE_PATH", custom_path.to_string_lossy().as_ref());
+    std::env::set_var(
+        "MEMPALACE_PALACE_PATH",
+        custom_path.to_string_lossy().as_ref(),
+    );
     let config = MempalaceConfig::with_config_dir(Some(tmp.path()));
     let result = config.palace_path();
     std::env::remove_var("MEMPALACE_PALACE_PATH");

@@ -3,10 +3,10 @@
 //! Embeds a query, does cosine similarity over all drawer embeddings,
 //! returns verbatim text with similarity scores. Port of searcher.py.
 
-use anyhow::Result;
-use rusqlite::Connection;
 use crate::embedder::embed_one;
 use crate::store::{vector_search, DrawerFilter};
+use anyhow::Result;
+use rusqlite::Connection;
 
 /// Print search results to stdout in the same format as the Python version.
 pub fn search_and_print(

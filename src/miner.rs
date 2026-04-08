@@ -18,8 +18,8 @@ pub const CHUNK_OVERLAP: usize = 100;
 pub const MIN_CHUNK_SIZE: usize = 50;
 
 static READABLE_EXTENSIONS: &[&str] = &[
-    "txt", "md", "py", "js", "ts", "jsx", "tsx", "json", "yaml", "yml",
-    "html", "css", "java", "go", "rs", "rb", "sh", "csv", "sql", "toml",
+    "txt", "md", "py", "js", "ts", "jsx", "tsx", "json", "yaml", "yml", "html", "css", "java",
+    "go", "rs", "rb", "sh", "csv", "sql", "toml",
 ];
 
 static SKIP_FILENAMES: &[&str] = &[
@@ -79,12 +79,7 @@ pub fn chunk_text(content: &str) -> Vec<(String, usize)> {
 }
 
 /// Route a file to the correct room based on path, filename, and keyword scoring.
-pub fn detect_room(
-    filepath: &Path,
-    content: &str,
-    rooms: &[Room],
-    project_path: &Path,
-) -> String {
+pub fn detect_room(filepath: &Path, content: &str, rooms: &[Room], project_path: &Path) -> String {
     let relative = filepath
         .strip_prefix(project_path)
         .unwrap_or(filepath)
@@ -95,7 +90,10 @@ pub fn detect_room(
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase();
-    let content_lower = content.get(..2000.min(content.len())).unwrap_or(content).to_lowercase();
+    let content_lower = content
+        .get(..2000.min(content.len()))
+        .unwrap_or(content)
+        .to_lowercase();
 
     // Priority 1: folder path matches room name or keywords
     let path_parts: Vec<&str> = relative.split('/').collect();
@@ -104,7 +102,10 @@ pub fn detect_room(
             let candidates: Vec<String> = std::iter::once(room.name.to_lowercase())
                 .chain(room.keywords.iter().map(|k| k.to_lowercase()))
                 .collect();
-            if candidates.iter().any(|c| part == c || c.contains(part) || part.contains(c.as_str())) {
+            if candidates
+                .iter()
+                .any(|c| part == c || c.contains(part) || part.contains(c.as_str()))
+            {
                 return room.name.clone();
             }
         }
@@ -112,7 +113,9 @@ pub fn detect_room(
 
     // Priority 2: filename matches room name
     for room in rooms {
-        if room.name.to_lowercase().contains(&filename) || filename.contains(&room.name.to_lowercase()) {
+        if room.name.to_lowercase().contains(&filename)
+            || filename.contains(&room.name.to_lowercase())
+        {
             return room.name.clone();
         }
     }
@@ -123,10 +126,13 @@ pub fn detect_room(
         let keywords: Vec<String> = std::iter::once(room.name.clone())
             .chain(room.keywords.iter().cloned())
             .collect();
-        let score: usize = keywords.iter().map(|kw| {
-            let kw_lower = kw.to_lowercase();
-            content_lower.matches(kw_lower.as_str()).count()
-        }).sum();
+        let score: usize = keywords
+            .iter()
+            .map(|kw| {
+                let kw_lower = kw.to_lowercase();
+                content_lower.matches(kw_lower.as_str()).count()
+            })
+            .sum();
         if score > 0 {
             scores.insert(&room.name, score);
         }
@@ -150,7 +156,9 @@ pub fn mine(
     respect_gitignore: bool,
     include_ignored: &[String],
 ) -> Result<()> {
-    let project_path = project_dir.canonicalize().context("resolving project dir")?;
+    let project_path = project_dir
+        .canonicalize()
+        .context("resolving project dir")?;
     let config = load_config(&project_path)?;
     let wing = wing_override.unwrap_or(&config.wing).to_string();
     let rooms = config.rooms;
@@ -178,7 +186,11 @@ pub fn mine(
             if SKIP_FILENAMES.contains(&name.as_ref()) {
                 return false;
             }
-            let ext = p.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+            let ext = p
+                .extension()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_lowercase();
             READABLE_EXTENSIONS.contains(&ext.as_str())
         })
         .collect();
@@ -193,7 +205,11 @@ pub fn mine(
     println!("  Wing:    {wing}");
     println!(
         "  Rooms:   {}",
-        rooms.iter().map(|r| r.name.as_str()).collect::<Vec<_>>().join(", ")
+        rooms
+            .iter()
+            .map(|r| r.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     );
     println!("  Files:   {}", files.len());
     if dry_run {
@@ -287,7 +303,10 @@ pub fn mine(
 /// Re-embed all drawers that are missing embeddings.
 pub fn repair(conn: &mut Connection) -> Result<()> {
     let unembedded = crate::store::fetch_unembedded(conn)?;
-    println!("  Repairing {} drawers missing embeddings...", unembedded.len());
+    println!(
+        "  Repairing {} drawers missing embeddings...",
+        unembedded.len()
+    );
 
     for (id, content) in &unembedded {
         if let Ok(vec) = crate::embedder::embed_one(content) {

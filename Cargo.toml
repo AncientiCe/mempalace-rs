@@ -8,14 +8,19 @@ license = "MIT"
 [[bin]]
 name = "mempalace"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [lib]
 name = "mempalace"
 path = "src/lib.rs"
 
+[features]
+default = ["cli"]
+cli = ["dep:clap"]
+
 [dependencies]
-# CLI
-clap = { version = "4", features = ["derive"] }
+# CLI (optional — only needed for the binary)
+clap = { version = "4", features = ["derive"], optional = true }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

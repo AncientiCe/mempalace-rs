@@ -126,7 +126,9 @@ pub fn detect_rooms_from_folders(project_dir: &Path) -> Vec<Room> {
             }
             let key = name.to_lowercase().replace('-', "_");
             if let Some(&room_name) = map.get(key.as_str()) {
-                found.entry(room_name.to_string()).or_insert_with(|| name.clone());
+                found
+                    .entry(room_name.to_string())
+                    .or_insert_with(|| name.clone());
             } else if name.len() > 2 && name.chars().next().map_or(false, |c| c.is_alphabetic()) {
                 let clean = name.to_lowercase().replace('-', "_").replace(' ', "_");
                 found.entry(clean).or_insert_with(|| name.clone());
@@ -155,7 +157,9 @@ pub fn detect_rooms_from_folders(project_dir: &Path) -> Vec<Room> {
                     }
                     let key = sub_name.to_lowercase().replace('-', "_");
                     if let Some(&room_name) = map.get(key.as_str()) {
-                        found.entry(room_name.to_string()).or_insert_with(|| sub_name.clone());
+                        found
+                            .entry(room_name.to_string())
+                            .or_insert_with(|| sub_name.clone());
                     }
                 }
             }
@@ -188,17 +192,29 @@ pub fn detect_rooms_from_files(project_dir: &Path) -> Vec<Room> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     let skip: std::collections::HashSet<&str> = SKIP_DIRS.iter().cloned().collect();
 
-    fn walk(dir: &Path, map: &HashMap<&str, &str>, counts: &mut HashMap<String, usize>, skip: &std::collections::HashSet<&str>) {
+    fn walk(
+        dir: &Path,
+        map: &HashMap<&str, &str>,
+        counts: &mut HashMap<String, usize>,
+        skip: &std::collections::HashSet<&str>,
+    ) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                    let name = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string();
                     if !skip.contains(name.as_str()) {
                         walk(&path, map, counts, skip);
                     }
                 } else {
-                    let fname = path.file_name().unwrap_or_default().to_string_lossy()
+                    let fname = path
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
                         .to_lowercase()
                         .replace('-', "_")
                         .replace(' ', "_");
@@ -258,7 +274,11 @@ pub fn load_config(project_dir: &Path) -> Result<ProjectConfig> {
         if legacy.exists() {
             legacy
         } else {
-            anyhow::bail!("No mempalace.yaml found in {}. Run: mempalace init {}", project_dir.display(), project_dir.display());
+            anyhow::bail!(
+                "No mempalace.yaml found in {}. Run: mempalace init {}",
+                project_dir.display(),
+                project_dir.display()
+            );
         }
     };
     let content = std::fs::read_to_string(&path)?;
@@ -286,7 +306,13 @@ pub fn detect_rooms_interactive(project_dir: &Path, yes: bool) -> Result<Vec<Roo
     println!("\n{}", "=".repeat(55));
     println!("  MemPalace Init — Local setup");
     println!("{}", "=".repeat(55));
-    println!("\n  WING: {}", project_dir.file_name().unwrap_or_default().to_string_lossy());
+    println!(
+        "\n  WING: {}",
+        project_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+    );
     println!("  (rooms detected from {source})\n");
     for room in &rooms {
         println!("    ROOM: {}", room.name);

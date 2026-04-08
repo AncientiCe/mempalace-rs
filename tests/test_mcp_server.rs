@@ -30,7 +30,18 @@ fn status_returns_counts() {
     let count = store::count_drawers(&conn).unwrap();
     assert_eq!(count, 0);
 
-    store::add_drawer(&conn, "wing_test", "room_a", "content", None, "f.txt", 0, "test", 3.0).unwrap();
+    store::add_drawer(
+        &conn,
+        "wing_test",
+        "room_a",
+        "content",
+        None,
+        "f.txt",
+        0,
+        "test",
+        3.0,
+    )
+    .unwrap();
     let count = store::count_drawers(&conn).unwrap();
     assert_eq!(count, 1);
 }
@@ -40,9 +51,18 @@ fn status_returns_counts() {
 #[test]
 fn taxonomy_aggregates_correctly() {
     let conn = test_db();
-    store::add_drawer(&conn, "wing_a", "room_1", "x", None, "a.txt", 0, "test", 3.0).unwrap();
-    store::add_drawer(&conn, "wing_a", "room_2", "y", None, "b.txt", 0, "test", 3.0).unwrap();
-    store::add_drawer(&conn, "wing_b", "room_1", "z", None, "c.txt", 0, "test", 3.0).unwrap();
+    store::add_drawer(
+        &conn, "wing_a", "room_1", "x", None, "a.txt", 0, "test", 3.0,
+    )
+    .unwrap();
+    store::add_drawer(
+        &conn, "wing_a", "room_2", "y", None, "b.txt", 0, "test", 3.0,
+    )
+    .unwrap();
+    store::add_drawer(
+        &conn, "wing_b", "room_1", "z", None, "c.txt", 0, "test", 3.0,
+    )
+    .unwrap();
 
     let tax = store::taxonomy(&conn).unwrap();
     assert_eq!(tax["wing_a"]["room_1"], 1);
@@ -58,12 +78,27 @@ fn add_drawer_tool_succeeds() {
     let now = chrono::Utc::now().to_rfc3339();
     let prefix = "test content";
     let id = {
-        let hash = blake3::hash(format!("wing_code/backend/{}/{now}", &prefix[..10.min(prefix.len())]).as_bytes());
+        let hash = blake3::hash(
+            format!(
+                "wing_code/backend/{}/{now}",
+                &prefix[..10.min(prefix.len())]
+            )
+            .as_bytes(),
+        );
         format!("drawer_wing_code_backend_{}", &hash.to_hex()[..16])
     };
     let added = store::add_drawer_with_id(
-        &conn, &id, "wing_code", "backend", "test content", None, "", "test", None
-    ).unwrap();
+        &conn,
+        &id,
+        "wing_code",
+        "backend",
+        "test content",
+        None,
+        "",
+        "test",
+        None,
+    )
+    .unwrap();
     assert!(added);
 }
 
@@ -81,7 +116,8 @@ fn delete_nonexistent_drawer_returns_not_found() {
 #[test]
 fn kg_add_and_query() {
     let conn = test_db();
-    knowledge_graph::add_triple(&conn, "Alice", "loves", "Rust", None, None, 1.0, None, None).unwrap();
+    knowledge_graph::add_triple(&conn, "Alice", "loves", "Rust", None, None, 1.0, None, None)
+        .unwrap();
     let facts = knowledge_graph::query_entity(&conn, "Alice", None, "outgoing").unwrap();
     assert_eq!(facts.len(), 1);
     assert_eq!(facts[0].predicate, "loves");
@@ -90,7 +126,18 @@ fn kg_add_and_query() {
 #[test]
 fn kg_invalidate_marks_fact_ended() {
     let conn = test_db();
-    knowledge_graph::add_triple(&conn, "Bob", "works_at", "Corp", Some("2020-01-01"), None, 1.0, None, None).unwrap();
+    knowledge_graph::add_triple(
+        &conn,
+        "Bob",
+        "works_at",
+        "Corp",
+        Some("2020-01-01"),
+        None,
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
     knowledge_graph::invalidate(&conn, "Bob", "works_at", "Corp", Some("2024-01-01")).unwrap();
     let facts = knowledge_graph::query_entity(&conn, "Bob", None, "outgoing").unwrap();
     assert!(!facts[0].current);
@@ -99,7 +146,18 @@ fn kg_invalidate_marks_fact_ended() {
 #[test]
 fn kg_timeline_returns_facts() {
     let conn = test_db();
-    knowledge_graph::add_triple(&conn, "Eve", "joined", "Project", Some("2023-01-01"), None, 1.0, None, None).unwrap();
+    knowledge_graph::add_triple(
+        &conn,
+        "Eve",
+        "joined",
+        "Project",
+        Some("2023-01-01"),
+        None,
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
     let tl = knowledge_graph::timeline(&conn, Some("Eve")).unwrap();
     assert_eq!(tl.len(), 1);
 }

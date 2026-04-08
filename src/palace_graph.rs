@@ -62,9 +62,8 @@ fn build_graph(conn: &Connection) -> Result<(HashMap<String, RoomNode>, Vec<Tunn
     let mut room_data: HashMap<String, (HashSet<String>, HashSet<String>, i64, HashSet<String>)> =
         HashMap::new();
 
-    let mut stmt = conn.prepare(
-        "SELECT room, wing, source_file, filed_at FROM drawers WHERE room != 'general'",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT room, wing, source_file, filed_at FROM drawers WHERE room != 'general'")?;
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -83,7 +82,9 @@ fn build_graph(conn: &Connection) -> Result<(HashMap<String, RoomNode>, Vec<Tunn
         entry.0.insert(wing);
         // Extract hall from source_file metadata suffix if present
         if let Some(null_pos) = source_file.find('\x00') {
-            if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&source_file[null_pos + 1..]) {
+            if let Ok(meta) =
+                serde_json::from_str::<serde_json::Value>(&source_file[null_pos + 1..])
+            {
                 if let Some(hall) = meta.get("hall").and_then(|v| v.as_str()) {
                     entry.1.insert(hall.to_string());
                 }
@@ -141,11 +142,7 @@ fn build_graph(conn: &Connection) -> Result<(HashMap<String, RoomNode>, Vec<Tunn
 }
 
 /// Walk the graph from a starting room using BFS.
-pub fn traverse(
-    conn: &Connection,
-    start_room: &str,
-    max_hops: usize,
-) -> Result<serde_json::Value> {
+pub fn traverse(conn: &Connection, start_room: &str, max_hops: usize) -> Result<serde_json::Value> {
     let (nodes, _edges) = build_graph(conn)?;
 
     if !nodes.contains_key(start_room) {
@@ -271,10 +268,8 @@ pub fn graph_stats(conn: &Connection) -> Result<GraphStats> {
         }
     }
 
-    let mut top_tunnels: Vec<(&String, &RoomNode)> = nodes
-        .iter()
-        .filter(|(_, n)| n.wings.len() >= 2)
-        .collect();
+    let mut top_tunnels: Vec<(&String, &RoomNode)> =
+        nodes.iter().filter(|(_, n)| n.wings.len() >= 2).collect();
     top_tunnels.sort_by(|a, b| b.1.wings.len().cmp(&a.1.wings.len()));
     top_tunnels.truncate(10);
 

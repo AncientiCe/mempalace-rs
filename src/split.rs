@@ -22,9 +22,18 @@ static SKIP_RE: Lazy<Regex> = Lazy::new(|| {
 
 static MONTHS: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
     [
-        ("January", "01"), ("February", "02"), ("March", "03"), ("April", "04"),
-        ("May", "05"), ("June", "06"), ("July", "07"), ("August", "08"),
-        ("September", "09"), ("October", "10"), ("November", "11"), ("December", "12"),
+        ("January", "01"),
+        ("February", "02"),
+        ("March", "03"),
+        ("April", "04"),
+        ("May", "05"),
+        ("June", "06"),
+        ("July", "07"),
+        ("August", "08"),
+        ("September", "09"),
+        ("October", "10"),
+        ("November", "11"),
+        ("December", "12"),
     ]
     .iter()
     .cloned()
@@ -40,9 +49,7 @@ fn find_session_boundaries(lines: &[&str]) -> Vec<usize> {
     lines
         .iter()
         .enumerate()
-        .filter(|(i, line)| {
-            line.contains("Claude Code v") && is_true_session_start(lines, *i)
-        })
+        .filter(|(i, line)| line.contains("Claude Code v") && is_true_session_start(lines, *i))
         .map(|(i, _)| i)
         .collect()
 }
@@ -71,11 +78,17 @@ fn load_known_people(config_dir: &Path) -> Vec<String> {
         if let Ok(s) = std::fs::read_to_string(&path) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
                 let names = if let Some(arr) = v.as_array() {
-                    arr.iter().filter_map(|x| x.as_str().map(String::from)).collect()
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
                 } else if let Some(obj) = v.as_object() {
                     obj.get("names")
                         .and_then(|n| n.as_array())
-                        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|x| x.as_str().map(String::from))
+                                .collect()
+                        })
                         .unwrap_or_default()
                 } else {
                     vec![]
@@ -93,7 +106,12 @@ fn load_known_people(config_dir: &Path) -> Vec<String> {
 }
 
 fn extract_people(lines: &[&str], known: &[String]) -> Vec<String> {
-    let text = lines.iter().take(100).cloned().collect::<Vec<_>>().join("\n");
+    let text = lines
+        .iter()
+        .take(100)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
     let mut found = std::collections::HashSet::new();
     for person in known {
         let re = Regex::new(&format!(r"(?i)\b{}\b", regex::escape(person))).unwrap();
@@ -117,10 +135,7 @@ fn extract_subject(lines: &[&str]) -> String {
                 .chars()
                 .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-')
                 .collect();
-            let subject = subject
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .join("-");
+            let subject = subject.split_whitespace().collect::<Vec<_>>().join("-");
             let subject = &subject[..subject.len().min(60)];
             return subject.to_string();
         }
@@ -129,7 +144,16 @@ fn extract_subject(lines: &[&str]) -> String {
 }
 
 fn sanitize_filename(s: &str) -> String {
-    let s: String = s.chars().map(|c| if c.is_alphanumeric() || c == '.' || c == '-' { c } else { '_' }).collect();
+    let s: String = s
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '.' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     let re = Regex::new(r"_+").unwrap();
     re.replace_all(&s, "_").to_string()
 }
@@ -174,11 +198,18 @@ fn split_file(
             people.iter().take(3).cloned().collect::<Vec<_>>().join("-")
         };
 
-        let name = sanitize_filename(&format!("{stem_safe}__{ts_part}_{people_part}_{subject}.txt"));
+        let name = sanitize_filename(&format!(
+            "{stem_safe}__{ts_part}_{people_part}_{subject}.txt"
+        ));
         let out_path = out_dir.join(&name);
 
         if dry_run {
-            println!("  [{}/{}] {name}  ({} lines)", i + 1, boundaries.len() - 1, chunk.len());
+            println!(
+                "  [{}/{}] {name}  ({} lines)",
+                i + 1,
+                boundaries.len() - 1,
+                chunk.len()
+            );
         } else {
             std::fs::write(&out_path, chunk.join("\n"))?;
             println!("  ✓ {name}  ({} lines)", chunk.len());
@@ -203,7 +234,11 @@ pub fn run(
 
     let src_dir = source
         .map(PathBuf::from)
-        .or_else(|| std::env::var("MEMPALACE_SOURCE_DIR").ok().map(PathBuf::from))
+        .or_else(|| {
+            std::env::var("MEMPALACE_SOURCE_DIR")
+                .ok()
+                .map(PathBuf::from)
+        })
         .unwrap_or_else(|| home.join("Desktop/transcripts"));
 
     let config_dir = home.join(".mempalace");
@@ -227,33 +262,56 @@ pub fn run(
             let content = std::fs::read_to_string(f).ok()?;
             let lines: Vec<&str> = content.lines().collect();
             let n = find_session_boundaries(&lines).len();
-            if n >= min_sessions { Some((f.clone(), n)) } else { None }
+            if n >= min_sessions {
+                Some((f.clone(), n))
+            } else {
+                None
+            }
         })
         .collect();
 
     if mega_files.is_empty() {
-        println!("No mega-files found in {} (min {} sessions).", src_dir.display(), min_sessions);
+        println!(
+            "No mega-files found in {} (min {} sessions).",
+            src_dir.display(),
+            min_sessions
+        );
         return Ok(());
     }
 
     println!("\n{}", "=".repeat(60));
-    println!("  Mega-file splitter — {}", if dry_run { "DRY RUN" } else { "SPLITTING" });
+    println!(
+        "  Mega-file splitter — {}",
+        if dry_run { "DRY RUN" } else { "SPLITTING" }
+    );
     println!("{}", "=".repeat(60));
     println!("  Source:      {}", src_dir.display());
-    println!("  Output:      {}", output_dir.map(|d| d.display().to_string()).unwrap_or_else(|| "same dir as source".to_string()));
+    println!(
+        "  Output:      {}",
+        output_dir
+            .map(|d| d.display().to_string())
+            .unwrap_or_else(|| "same dir as source".to_string())
+    );
     println!("  Mega-files:  {}", mega_files.len());
     println!("{}\n", "-".repeat(60));
 
     let mut total_written = 0usize;
     for (f, n_sessions) in &mega_files {
-        println!("  {}  ({n_sessions} sessions, {}KB)", f.file_name().unwrap_or_default().to_string_lossy(), f.metadata().map(|m| m.len() / 1024).unwrap_or(0));
+        println!(
+            "  {}  ({n_sessions} sessions, {}KB)",
+            f.file_name().unwrap_or_default().to_string_lossy(),
+            f.metadata().map(|m| m.len() / 1024).unwrap_or(0)
+        );
         let written = split_file(f, output_dir, dry_run, &known_people)?;
         total_written += written.len();
 
         if !dry_run && !written.is_empty() {
             let backup = f.with_extension("mega_backup");
             std::fs::rename(f, &backup)?;
-            println!("  → Original renamed to {}\n", backup.file_name().unwrap_or_default().to_string_lossy());
+            println!(
+                "  → Original renamed to {}\n",
+                backup.file_name().unwrap_or_default().to_string_lossy()
+            );
         } else {
             println!();
         }
@@ -261,9 +319,15 @@ pub fn run(
 
     println!("{}", "-".repeat(60));
     if dry_run {
-        println!("  DRY RUN — would create {total_written} files from {} mega-files", mega_files.len());
+        println!(
+            "  DRY RUN — would create {total_written} files from {} mega-files",
+            mega_files.len()
+        );
     } else {
-        println!("  Done — created {total_written} files from {} mega-files", mega_files.len());
+        println!(
+            "  Done — created {total_written} files from {} mega-files",
+            mega_files.len()
+        );
     }
     println!();
     Ok(())

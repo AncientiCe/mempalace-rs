@@ -25,9 +25,7 @@ fn get_embedder() -> Result<&'static TextEmbedding> {
 /// Embed a single piece of text, returning a 384-dimensional vector.
 pub fn embed_one(text: &str) -> Result<Vec<f32>> {
     let embedder = get_embedder()?;
-    let mut results = embedder
-        .embed(vec![text], None)
-        .context("embedding text")?;
+    let mut results = embedder.embed(vec![text], None).context("embedding text")?;
     results
         .pop()
         .ok_or_else(|| anyhow::anyhow!("embedding returned empty result"))

@@ -12,9 +12,11 @@ use std::path::Path;
 /// Load a file and normalize its content to transcript format.
 /// Plain text files pass through unchanged.
 pub fn normalize_file(filepath: &Path) -> Result<String> {
-    let content = std::fs::read_to_string(filepath)
-        .unwrap_or_else(|_| String::new());
-    Ok(normalize_content(&content, filepath.extension().and_then(|e| e.to_str()).unwrap_or("")))
+    let content = std::fs::read_to_string(filepath).unwrap_or_else(|_| String::new());
+    Ok(normalize_content(
+        &content,
+        filepath.extension().and_then(|e| e.to_str()).unwrap_or(""),
+    ))
 }
 
 /// Normalize an already-loaded string.
@@ -25,7 +27,10 @@ pub fn normalize_content(content: &str, ext: &str) -> String {
     }
 
     // Already has > markers — pass through
-    let quote_count = content.lines().filter(|l| l.trim().starts_with('>')).count();
+    let quote_count = content
+        .lines()
+        .filter(|l| l.trim().starts_with('>'))
+        .count();
     if quote_count >= 3 {
         return content.to_string();
     }
@@ -78,13 +83,15 @@ fn try_claude_code_jsonl(content: &str) -> Option<String> {
         let message = entry.get("message").cloned().unwrap_or_default();
         match msg_type {
             "human" | "user" => {
-                let text = extract_content(message.get("content").unwrap_or(&serde_json::Value::Null));
+                let text =
+                    extract_content(message.get("content").unwrap_or(&serde_json::Value::Null));
                 if !text.is_empty() {
                     messages.push(("user".into(), text));
                 }
             }
             "assistant" => {
-                let text = extract_content(message.get("content").unwrap_or(&serde_json::Value::Null));
+                let text =
+                    extract_content(message.get("content").unwrap_or(&serde_json::Value::Null));
                 if !text.is_empty() {
                     messages.push(("assistant".into(), text));
                 }
@@ -141,12 +148,11 @@ fn try_codex_jsonl(content: &str) -> Option<String> {
 
 fn try_claude_ai_json(data: &serde_json::Value) -> Option<String> {
     let msgs_val = match data {
-        serde_json::Value::Object(o) => {
-            o.get("messages")
-                .or_else(|| o.get("chat_messages"))
-                .cloned()
-                .unwrap_or_else(|| data.clone())
-        }
+        serde_json::Value::Object(o) => o
+            .get("messages")
+            .or_else(|| o.get("chat_messages"))
+            .cloned()
+            .unwrap_or_else(|| data.clone()),
         _ => data.clone(),
     };
 
@@ -167,7 +173,11 @@ fn try_claude_ai_json(data: &serde_json::Value) -> Option<String> {
                 }
             }
         }
-        return if all.len() >= 2 { Some(messages_to_transcript(&all)) } else { None };
+        return if all.len() >= 2 {
+            Some(messages_to_transcript(&all))
+        } else {
+            None
+        };
     }
 
     // Flat messages list
@@ -181,7 +191,11 @@ fn try_claude_ai_json(data: &serde_json::Value) -> Option<String> {
             _ => {}
         }
     }
-    if messages.len() >= 2 { Some(messages_to_transcript(&messages)) } else { None }
+    if messages.len() >= 2 {
+        Some(messages_to_transcript(&messages))
+    } else {
+        None
+    }
 }
 
 fn try_chatgpt_json(data: &serde_json::Value) -> Option<String> {
@@ -243,13 +257,18 @@ fn try_chatgpt_json(data: &serde_json::Value) -> Option<String> {
             .map(String::from);
     }
 
-    if messages.len() >= 2 { Some(messages_to_transcript(&messages)) } else { None }
+    if messages.len() >= 2 {
+        Some(messages_to_transcript(&messages))
+    } else {
+        None
+    }
 }
 
 fn try_slack_json(data: &serde_json::Value) -> Option<String> {
     let list = data.as_array()?;
     let mut messages: Vec<(String, String)> = Vec::new();
-    let mut seen_users: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut seen_users: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     let mut last_role = String::new();
 
     for item in list {
@@ -262,7 +281,12 @@ fn try_slack_json(data: &serde_json::Value) -> Option<String> {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let text = item
+            .get("text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if text.is_empty() || user_id.is_empty() {
             continue;
         }
@@ -277,7 +301,11 @@ fn try_slack_json(data: &serde_json::Value) -> Option<String> {
         messages.push((role.clone(), text));
     }
 
-    if messages.len() >= 2 { Some(messages_to_transcript(&messages)) } else { None }
+    if messages.len() >= 2 {
+        Some(messages_to_transcript(&messages))
+    } else {
+        None
+    }
 }
 
 fn extract_content(value: &serde_json::Value) -> String {

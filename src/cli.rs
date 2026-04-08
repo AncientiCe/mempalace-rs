@@ -211,10 +211,12 @@ pub fn run() -> Result<()> {
         Commands::WakeUp { wing } => {
             let db_path = config.palace_db_path();
             if !db_path.exists() {
-                println!("{}\n\n## L1 — No palace found. Run: mempalace mine <dir>",
-                    std::fs::read_to_string(config.identity_path()).unwrap_or_else(|_|
-                        "## L0 — No identity configured. Create ~/.mempalace/identity.txt".to_string()
-                    )
+                println!(
+                    "{}\n\n## L1 — No palace found. Run: mempalace mine <dir>",
+                    std::fs::read_to_string(config.identity_path()).unwrap_or_else(|_| {
+                        "## L0 — No identity configured. Create ~/.mempalace/identity.txt"
+                            .to_string()
+                    })
                 );
                 return Ok(());
             }
@@ -250,7 +252,13 @@ pub fn run() -> Result<()> {
             dry_run,
             file,
         } => {
-            crate::split::run(source.as_deref(), output_dir.as_deref(), min_sessions, dry_run, file.as_deref())?;
+            crate::split::run(
+                source.as_deref(),
+                output_dir.as_deref(),
+                min_sessions,
+                dry_run,
+                file.as_deref(),
+            )?;
         }
 
         Commands::Repair => {

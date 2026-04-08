@@ -31,11 +31,73 @@ const SKIP_DIRS: &[&str] = &[
 const MIN_CHUNK_SIZE: usize = 30;
 
 static TOPIC_KEYWORDS: &[(&str, &[&str])] = &[
-    ("technical", &["code", "python", "function", "bug", "error", "api", "database", "server", "deploy", "git", "test", "debug", "refactor"]),
-    ("architecture", &["architecture", "design", "pattern", "structure", "schema", "interface", "module", "component", "service", "layer"]),
-    ("planning", &["plan", "roadmap", "milestone", "deadline", "priority", "sprint", "backlog", "scope", "requirement", "spec"]),
-    ("decisions", &["decided", "chose", "picked", "switched", "migrated", "replaced", "trade-off", "alternative", "option", "approach"]),
-    ("problems", &["problem", "issue", "broken", "failed", "crash", "stuck", "workaround", "fix", "solved", "resolved"]),
+    (
+        "technical",
+        &[
+            "code", "python", "function", "bug", "error", "api", "database", "server", "deploy",
+            "git", "test", "debug", "refactor",
+        ],
+    ),
+    (
+        "architecture",
+        &[
+            "architecture",
+            "design",
+            "pattern",
+            "structure",
+            "schema",
+            "interface",
+            "module",
+            "component",
+            "service",
+            "layer",
+        ],
+    ),
+    (
+        "planning",
+        &[
+            "plan",
+            "roadmap",
+            "milestone",
+            "deadline",
+            "priority",
+            "sprint",
+            "backlog",
+            "scope",
+            "requirement",
+            "spec",
+        ],
+    ),
+    (
+        "decisions",
+        &[
+            "decided",
+            "chose",
+            "picked",
+            "switched",
+            "migrated",
+            "replaced",
+            "trade-off",
+            "alternative",
+            "option",
+            "approach",
+        ],
+    ),
+    (
+        "problems",
+        &[
+            "problem",
+            "issue",
+            "broken",
+            "failed",
+            "crash",
+            "stuck",
+            "workaround",
+            "fix",
+            "solved",
+            "resolved",
+        ],
+    ),
 ];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,7 +175,11 @@ fn chunk_by_paragraph(content: &str) -> Vec<(String, usize)> {
             .enumerate()
             .filter_map(|(i, chunk)| {
                 let group = chunk.join("\n").trim().to_string();
-                if group.len() > MIN_CHUNK_SIZE { Some((group, i)) } else { None }
+                if group.len() > MIN_CHUNK_SIZE {
+                    Some((group, i))
+                } else {
+                    None
+                }
             })
             .collect();
     }
@@ -127,26 +193,44 @@ fn chunk_by_paragraph(content: &str) -> Vec<(String, usize)> {
 }
 
 fn detect_convo_room(content: &str) -> String {
-    let content_lower = content.get(..3000.min(content.len())).unwrap_or(content).to_lowercase();
+    let content_lower = content
+        .get(..3000.min(content.len()))
+        .unwrap_or(content)
+        .to_lowercase();
     let mut scores: HashMap<&str, usize> = HashMap::new();
     for (room, keywords) in TOPIC_KEYWORDS {
-        let score: usize = keywords.iter().filter(|kw| content_lower.contains(**kw)).count();
+        let score: usize = keywords
+            .iter()
+            .filter(|kw| content_lower.contains(**kw))
+            .count();
         if score > 0 {
             scores.insert(room, score);
         }
     }
-    scores.into_iter().max_by_key(|(_, v)| *v).map(|(k, _)| k.to_string()).unwrap_or_else(|| "general".to_string())
+    scores
+        .into_iter()
+        .max_by_key(|(_, v)| *v)
+        .map(|(k, _)| k.to_string())
+        .unwrap_or_else(|| "general".to_string())
 }
 
 fn scan_convos(convo_dir: &Path) -> Vec<std::path::PathBuf> {
     let skip: std::collections::HashSet<&str> = SKIP_DIRS.iter().cloned().collect();
     let mut files = Vec::new();
 
-    fn walk(dir: &Path, skip: &std::collections::HashSet<&str>, files: &mut Vec<std::path::PathBuf>) {
+    fn walk(
+        dir: &Path,
+        skip: &std::collections::HashSet<&str>,
+        files: &mut Vec<std::path::PathBuf>,
+    ) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if path.is_dir() {
                     if !skip.contains(name.as_str()) {
                         walk(&path, skip, files);
@@ -155,7 +239,11 @@ fn scan_convos(convo_dir: &Path) -> Vec<std::path::PathBuf> {
                     if name.ends_with(".meta.json") {
                         continue;
                     }
-                    let ext = path.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+                    let ext = path
+                        .extension()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_lowercase();
                     if CONVO_EXTENSIONS.contains(&ext.as_str()) {
                         files.push(path);
                     }
@@ -179,9 +267,15 @@ pub fn mine_convos(
     extract_mode: ExtractMode,
 ) -> Result<()> {
     let convo_path = convo_dir.canonicalize().context("resolving convo dir")?;
-    let wing = wing.unwrap_or_else(|| {
-        convo_path.file_name().unwrap_or_default().to_str().unwrap_or("conversations")
-    }).to_string();
+    let wing = wing
+        .unwrap_or_else(|| {
+            convo_path
+                .file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or("conversations")
+        })
+        .to_string();
     let wing = wing.to_lowercase().replace(' ', "_").replace('-', "_");
 
     let mut files = scan_convos(&convo_path);
@@ -224,7 +318,10 @@ pub fn mine_convos(
         let chunks_with_rooms: Vec<(String, String, usize)> = match extract_mode {
             ExtractMode::General => {
                 let memories = extract_memories(&content, 0.3);
-                memories.into_iter().map(|m| (m.content, m.memory_type, m.chunk_index)).collect()
+                memories
+                    .into_iter()
+                    .map(|m| (m.content, m.memory_type, m.chunk_index))
+                    .collect()
             }
             ExtractMode::Exchange => {
                 let room = detect_convo_room(&content);

@@ -1,4 +1,4 @@
-use mempalace::miner::{chunk_text, detect_room, CHUNK_SIZE, CHUNK_OVERLAP};
+use mempalace::miner::{chunk_text, detect_room, CHUNK_OVERLAP, CHUNK_SIZE};
 use mempalace::room_detector::Room;
 use std::path::Path;
 
@@ -15,7 +15,10 @@ fn chunk_text_short_content_produces_one_chunk() {
 fn chunk_text_long_content_produces_multiple_chunks() {
     let text = "a".repeat(CHUNK_SIZE * 3);
     let chunks = chunk_text(&text);
-    assert!(chunks.len() >= 2, "long content should produce multiple chunks");
+    assert!(
+        chunks.len() >= 2,
+        "long content should produce multiple chunks"
+    );
 }
 
 #[test]
@@ -38,9 +41,21 @@ fn chunk_text_indices_are_sequential() {
 #[test]
 fn detect_room_uses_folder_path() {
     let rooms = vec![
-        Room { name: "backend".into(), description: "backend code".into(), keywords: vec!["api".into()] },
-        Room { name: "frontend".into(), description: "ui code".into(), keywords: vec!["ui".into()] },
-        Room { name: "general".into(), description: "other".into(), keywords: vec![] },
+        Room {
+            name: "backend".into(),
+            description: "backend code".into(),
+            keywords: vec!["api".into()],
+        },
+        Room {
+            name: "frontend".into(),
+            description: "ui code".into(),
+            keywords: vec!["ui".into()],
+        },
+        Room {
+            name: "general".into(),
+            description: "other".into(),
+            keywords: vec![],
+        },
     ];
     let project = Path::new("/project");
     let path = Path::new("/project/backend/server.py");
@@ -51,8 +66,16 @@ fn detect_room_uses_folder_path() {
 #[test]
 fn detect_room_keyword_scoring() {
     let rooms = vec![
-        Room { name: "database".into(), description: "db".into(), keywords: vec!["sql".into(), "schema".into()] },
-        Room { name: "general".into(), description: "other".into(), keywords: vec![] },
+        Room {
+            name: "database".into(),
+            description: "db".into(),
+            keywords: vec!["sql".into(), "schema".into()],
+        },
+        Room {
+            name: "general".into(),
+            description: "other".into(),
+            keywords: vec![],
+        },
     ];
     let project = Path::new("/project");
     let path = Path::new("/project/config.txt");
@@ -64,8 +87,16 @@ fn detect_room_keyword_scoring() {
 #[test]
 fn detect_room_defaults_to_general() {
     let rooms = vec![
-        Room { name: "backend".into(), description: "backend".into(), keywords: vec!["rust".into()] },
-        Room { name: "general".into(), description: "other".into(), keywords: vec![] },
+        Room {
+            name: "backend".into(),
+            description: "backend".into(),
+            keywords: vec!["rust".into()],
+        },
+        Room {
+            name: "general".into(),
+            description: "other".into(),
+            keywords: vec![],
+        },
     ];
     let project = Path::new("/project");
     let path = Path::new("/project/data.csv");

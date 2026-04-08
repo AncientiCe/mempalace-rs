@@ -19,7 +19,9 @@ pub fn open(db_path: &Path) -> Result<Connection> {
     )
     .with_context(|| format!("opening database {}", db_path.display()))?;
 
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
+    )?;
 
     migrate(&conn)?;
     Ok(conn)

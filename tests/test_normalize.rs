@@ -24,7 +24,10 @@ fn claude_ai_json_flat_list() {
     .to_string();
     let result = normalize_content(&json, "json");
     assert!(result.contains("> What is Rust?"), "result: {result}");
-    assert!(result.contains("Rust is a systems programming language."), "result: {result}");
+    assert!(
+        result.contains("Rust is a systems programming language."),
+        "result: {result}"
+    );
 }
 
 #[test]

@@ -53,9 +53,9 @@ fn detect_entities_from_text(text: &str) -> (Vec<String>, Vec<String>) {
 
     // Common titles/words to skip
     static SKIP: &[&str] = &[
-        "The", "This", "That", "With", "From", "Your", "When", "They",
-        "What", "Which", "Where", "There", "Into", "About", "After", "Before",
-        "During", "While", "Using", "Each", "Every", "Some", "More",
+        "The", "This", "That", "With", "From", "Your", "When", "They", "What", "Which", "Where",
+        "There", "Into", "About", "After", "Before", "During", "While", "Using", "Each", "Every",
+        "Some", "More",
     ];
 
     for (word, count) in word_counts.iter() {
@@ -88,7 +88,11 @@ pub fn run_onboarding(project_dir: &Path, config_dir: &Path) -> Result<()> {
         for entry in entries.flatten().take(20) {
             let path = entry.path();
             if path.is_file() {
-                let ext = path.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+                let ext = path
+                    .extension()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase();
                 if matches!(ext.as_str(), "md" | "txt" | "rs" | "py" | "js" | "ts") {
                     if let Ok(content) = std::fs::read_to_string(&path) {
                         sample_text.push_str(&content[..content.len().min(2000)]);
