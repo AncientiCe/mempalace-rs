@@ -31,7 +31,10 @@ serde_yaml = "0.9"
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Embeddings — ONNX Runtime, all-MiniLM-L6-v2, lazy init
-fastembed = "4"
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["ndarray", "std", "download-binaries", "tls-native"] }
+ndarray = "0.17"
+hf-hub = { version = "0.5", default-features = false, features = ["ureq", "native-tls"] }
+unicode-normalization = "0.1"
 
 # Error handling
 anyhow = "1"
