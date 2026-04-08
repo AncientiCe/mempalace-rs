@@ -59,8 +59,8 @@ pub struct GraphStats {
 
 /// Build the room graph from drawer metadata in the database.
 fn build_graph(conn: &Connection) -> Result<(HashMap<String, RoomNode>, Vec<TunnelEdge>)> {
-    let mut room_data: HashMap<String, (HashSet<String>, HashSet<String>, i64, HashSet<String>)> =
-        HashMap::new();
+    type RoomTuple = (HashSet<String>, HashSet<String>, i64, HashSet<String>);
+    let mut room_data: HashMap<String, RoomTuple> = HashMap::new();
 
     let mut stmt = conn
         .prepare("SELECT room, wing, source_file, filed_at FROM drawers WHERE room != 'general'")?;

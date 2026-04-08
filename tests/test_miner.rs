@@ -1,4 +1,4 @@
-use mempalace::miner::{chunk_text, detect_room, CHUNK_OVERLAP, CHUNK_SIZE};
+use mempalace::miner::{chunk_text, detect_room, CHUNK_SIZE};
 use mempalace::room_detector::Room;
 use std::path::Path;
 

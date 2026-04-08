@@ -53,6 +53,7 @@ pub fn diary_id(wing: &str, timestamp: &str, content_prefix: &str) -> String {
 }
 
 /// Add a drawer to the palace. Returns `true` if inserted, `false` if already exists.
+#[allow(clippy::too_many_arguments)]
 pub fn add_drawer(
     conn: &Connection,
     wing: &str,
@@ -81,6 +82,7 @@ pub fn add_drawer(
 }
 
 /// Add a drawer with an explicit ID (used by MCP add_drawer and diary_write).
+#[allow(clippy::too_many_arguments)]
 pub fn add_drawer_with_id(
     conn: &Connection,
     id: &str,

@@ -206,12 +206,12 @@ fn try_chatgpt_json(data: &serde_json::Value) -> Option<String> {
     let root_id = mapping
         .iter()
         .find(|(_, node)| {
-            node.get("parent").map_or(false, |p| p.is_null()) && node.get("message").is_none()
+            node.get("parent").is_some_and(|p| p.is_null()) && node.get("message").is_none()
         })
         .or_else(|| {
             mapping
                 .iter()
-                .find(|(_, node)| node.get("parent").map_or(false, |p| p.is_null()))
+                .find(|(_, node)| node.get("parent").is_some_and(|p| p.is_null()))
         })
         .map(|(id, _)| id.clone())?;
 

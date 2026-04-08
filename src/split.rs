@@ -63,7 +63,7 @@ fn extract_timestamp(lines: &[&str]) -> (Option<String>, Option<String>) {
             let year = cap.get(4).map_or("", |m| m.as_str());
             let mon = MONTHS.get(month).copied().unwrap_or("00");
             let day_z = format!("{:02}", day.parse::<u32>().unwrap_or(1));
-            let time_safe = time_str.replace(':', "").replace(' ', "");
+            let time_safe = time_str.replace([':', ' '], "");
             let iso = format!("{year}-{mon}-{day_z}");
             let human = format!("{year}-{mon}-{day_z}_{time_safe}");
             return (Some(human), Some(iso));
@@ -126,8 +126,8 @@ fn extract_people(lines: &[&str], known: &[String]) -> Vec<String> {
 
 fn extract_subject(lines: &[&str]) -> String {
     for line in lines {
-        if line.starts_with("> ") {
-            let prompt = line[2..].trim();
+        if let Some(stripped) = line.strip_prefix("> ") {
+            let prompt = stripped.trim();
             if prompt.is_empty() || SKIP_RE.is_match(prompt) || prompt.len() <= 5 {
                 continue;
             }
@@ -250,7 +250,7 @@ pub fn run(
         let mut f: Vec<PathBuf> = std::fs::read_dir(&src_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.extension().map_or(false, |e| e == "txt"))
+            .filter(|p| p.extension().is_some_and(|e| e == "txt"))
             .collect();
         f.sort();
         f

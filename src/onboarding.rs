@@ -44,7 +44,7 @@ fn detect_entities_from_text(text: &str) -> (Vec<String>, Vec<String>) {
     for word in text.split_whitespace() {
         let clean = word.trim_matches(|c: char| !c.is_alphanumeric());
         if clean.len() > 2
-            && clean.chars().next().map_or(false, |c| c.is_uppercase())
+            && clean.chars().next().is_some_and(|c| c.is_uppercase())
             && clean.chars().skip(1).all(|c| c.is_alphabetic() || c == '-')
         {
             *word_counts.entry(clean.to_string()).or_default() += 1;

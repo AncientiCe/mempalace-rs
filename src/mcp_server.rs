@@ -113,17 +113,14 @@ fn handle_request(conn: &Connection, config: &MempalaceConfig, req: &Value) -> O
         }
     };
 
-    match result {
-        Some(r) => Some(
-            serde_json::to_string(&json!({
-                "jsonrpc": "2.0",
-                "id": req_id,
-                "result": r,
-            }))
-            .unwrap(),
-        ),
-        None => None,
-    }
+    result.map(|r| {
+        serde_json::to_string(&json!({
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "result": r,
+        }))
+        .unwrap()
+    })
 }
 
 fn dispatch_tool(conn: &Connection, config: &MempalaceConfig, name: &str, args: &Value) -> Value {

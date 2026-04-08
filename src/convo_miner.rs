@@ -276,7 +276,7 @@ pub fn mine_convos(
                 .unwrap_or("conversations")
         })
         .to_string();
-    let wing = wing.to_lowercase().replace(' ', "_").replace('-', "_");
+    let wing = wing.to_lowercase().replace([' ', '-'], "_");
 
     let mut files = scan_convos(&convo_path);
     if limit > 0 {

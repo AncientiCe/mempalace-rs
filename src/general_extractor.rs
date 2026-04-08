@@ -68,7 +68,7 @@ static DECISION_PATS: Lazy<Vec<Regex>> = Lazy::new(|| {
 });
 
 static PREFERENCE_PATS: Lazy<Vec<Regex>> = Lazy::new(|| {
-    vec![
+    [
         r"(?i)\bi prefer\b",
         r"(?i)\balways use\b",
         r"(?i)\bnever use\b",
@@ -261,7 +261,7 @@ static NEGATIVE_WORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 });
 
 static CODE_PATS: Lazy<Vec<Regex>> = Lazy::new(|| {
-    vec![
+    [
         r"^\s*[\$#]\s",
         r"^\s*(cd|source|echo|export|pip|npm|git|python|bash|curl|wget|mkdir|rm|cp|mv|ls|cat|grep|find|chmod|sudo|brew|docker)\s",
         r"^\s*```",
@@ -347,7 +347,7 @@ fn get_sentiment(text: &str) -> i32 {
 
 fn has_resolution(text: &str) -> bool {
     static RESOLUTION_PATS: Lazy<Vec<Regex>> = Lazy::new(|| {
-        vec![
+        [
             r"(?i)\bfixed\b",
             r"(?i)\bsolved\b",
             r"(?i)\bresolved\b",

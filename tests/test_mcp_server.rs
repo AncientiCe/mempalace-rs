@@ -8,20 +8,6 @@ fn test_db() -> rusqlite::Connection {
     db::open_in_memory().unwrap()
 }
 
-fn dispatch(conn: &rusqlite::Connection, tool: &str, args: serde_json::Value) -> serde_json::Value {
-    use mempalace::config::MempalaceConfig;
-    // We call dispatch_tool indirectly by testing the underlying logic
-    // (dispatch_tool is private; tests use public APIs instead)
-    match tool {
-        "status" => {
-            let count = store::count_drawers(conn).unwrap_or(0);
-            let wings = store::wing_counts(conn).unwrap_or_default();
-            serde_json::json!({"total_drawers": count, "wings": wings})
-        }
-        _ => serde_json::json!({"error": "test shim"}),
-    }
-}
-
 // ── Status ────────────────────────────────────────────────────────────────
 
 #[test]

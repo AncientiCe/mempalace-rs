@@ -79,6 +79,7 @@ fn ensure_entity(conn: &Connection, name: &str) -> Result<String> {
 
 /// Add a relationship triple. Auto-creates entities if they don't exist.
 /// Returns the triple ID.
+#[allow(clippy::too_many_arguments)]
 pub fn add_triple(
     conn: &Connection,
     subject: &str,

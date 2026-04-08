@@ -1,5 +1,4 @@
 use mempalace::db;
-use mempalace::embedder;
 use mempalace::store::*;
 
 fn open_test_db() -> rusqlite::Connection {

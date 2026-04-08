@@ -146,6 +146,7 @@ pub fn detect_room(filepath: &Path, content: &str, rooms: &[Room], project_path:
 }
 
 /// Mine a project directory into the palace.
+#[allow(clippy::too_many_arguments)]
 pub fn mine(
     conn: &mut Connection,
     project_dir: &Path,
@@ -179,7 +180,7 @@ pub fn mine(
     let mut files: Vec<std::path::PathBuf> = walker
         .build()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().map_or(false, |ft| ft.is_file()))
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
         .map(|e| e.path().to_path_buf())
         .filter(|p| {
             let name = p.file_name().unwrap_or_default().to_string_lossy();

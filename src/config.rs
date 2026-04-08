@@ -119,7 +119,7 @@ impl MempalaceConfig {
     pub fn with_config_dir(config_dir: Option<&Path>) -> Self {
         let dir = config_dir
             .map(PathBuf::from)
-            .unwrap_or_else(|| Self::default_config_dir());
+            .unwrap_or_else(Self::default_config_dir);
 
         let config_file = dir.join("config.json");
         let file_config: FileConfig = if config_file.exists() {

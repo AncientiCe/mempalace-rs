@@ -133,8 +133,7 @@ pub fn run() -> Result<()> {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_lowercase()
-                .replace(' ', "_")
-                .replace('-', "_");
+                .replace([' ', '-'], "_");
             let config_path = crate::room_detector::save_config(&dir, &project_name, &rooms)?;
             println!("\n  Config saved: {}", config_path.display());
             println!("\n  Next step:\n    mempalace mine {}\n", dir.display());

@@ -129,8 +129,8 @@ pub fn detect_rooms_from_folders(project_dir: &Path) -> Vec<Room> {
                 found
                     .entry(room_name.to_string())
                     .or_insert_with(|| name.clone());
-            } else if name.len() > 2 && name.chars().next().map_or(false, |c| c.is_alphabetic()) {
-                let clean = name.to_lowercase().replace('-', "_").replace(' ', "_");
+            } else if name.len() > 2 && name.chars().next().is_some_and(|c| c.is_alphabetic()) {
+                let clean = name.to_lowercase().replace(['-', ' '], "_");
                 found.entry(clean).or_insert_with(|| name.clone());
             }
         }
@@ -216,8 +216,7 @@ pub fn detect_rooms_from_files(project_dir: &Path) -> Vec<Room> {
                         .unwrap_or_default()
                         .to_string_lossy()
                         .to_lowercase()
-                        .replace('-', "_")
-                        .replace(' ', "_");
+                        .replace(['-', ' '], "_");
                     for (kw, room) in map {
                         if fname.contains(kw) {
                             *counts.entry(room.to_string()).or_default() += 1;
