@@ -1,8 +1,6 @@
 # mempalace-rs
 
 [![CI](https://github.com/AncientiCe/mempalace-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/AncientiCe/mempalace-rs/actions/workflows/ci.yml)
-[![Crates.io](https://img.shields.io/crates/v/mempalace-rust.svg)](https://crates.io/crates/mempalace-rust)
-[![Docs.rs](https://docs.rs/mempalace-rust/badge.svg)](https://docs.rs/mempalace-rust)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.82+](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org)
 
