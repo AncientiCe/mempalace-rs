@@ -63,6 +63,17 @@ Per-question-type on `s_cleaned`:
 | single-session-user | 0.922 | 1.000 | 1.000 |
 | temporal-reasoning | 0.835 | 0.976 | 0.984 |
 
+### Reading the numbers
+
+- **`oracle` is a sanity check, not a real result.** That split hands the retriever only the sessions known to contain the answer, so perfect recall just confirms the pipeline is wired up correctly.
+- **`s_cleaned` is the real test.** ~50 sessions / ~115k tokens of conversational haystack per question, no hints. R@5 = 0.981 means that for 461 of 470 evaluated questions, a gold session appears somewhere in the top 5 retrieved.
+- **R@1 → R@5 → R@10 tells you where the failures cluster.** The jump from 0.889 to 0.981 means most "misses" at top-1 are near-misses — the right session is usually rank 2–5, displaced by a lexically similar distractor. The further jump to 0.991 at top-10 means only ~9 questions out of 470 fall outside the top-10 entirely; those are the genuinely hard cases.
+- **Per-question-type breakdown is where the model's blind spots show.**
+  - `single-session-assistant`, `single-session-user`, `knowledge-update`: ≥0.94 at R@1, ≈1.0 at R@5. The retriever handles direct questions where the answer is stated verbatim in one session.
+  - `multi-session` and `temporal-reasoning`: strong at R@5 (~0.98) but lower at R@1 (~0.83–0.91). Multiple sessions are relevant and the "best" one is a judgement call — top-1 ranking among near-equivalents is genuinely ambiguous.
+  - `single-session-preference`: the visible weak spot at 0.633 / 0.867 / 0.933. Preference questions ("what's my favorite X") are answered by sentences like *"I like…"* / *"I prefer…"* that don't share keywords with the question. Pure BM25 + frozen MiniLM has no signal for preference-shaped sentences specifically; closing this gap would require either an LLM-extracted preference index or a hand-rolled pattern booster.
+- **What's deliberately *not* in these numbers.** No LLM at any stage — no extraction during ingest, no query rewriting, no rerank, no answer generation. No per-dataset hyperparameter tuning. No keyword/temporal/preference boosters. No GPU. The result is the retrieval engine in isolation, on a single CPU, with fixed defaults.
+
 ---
 
 ## Installation
