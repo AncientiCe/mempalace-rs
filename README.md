@@ -33,6 +33,28 @@ Embeddings are stored as `f32` vectors from `all-MiniLM-L6-v2`. Search uses loca
 
 ---
 
+## Benchmarks
+
+LongMemEval, session granularity, `recall_any@K`:
+
+| Split | R@1 | R@5 | R@10 |
+|---|---:|---:|---:|
+| `longmemeval_oracle` | 1.000 | 1.000 | 1.000 |
+| `longmemeval_s_cleaned` | **0.889** | **0.981** | **0.991** |
+
+Per-question-type on `s_cleaned`:
+
+| Question type | R@1 | R@5 | R@10 |
+|---|---:|---:|---:|
+| knowledge-update | 0.944 | 1.000 | 1.000 |
+| multi-session | 0.909 | 0.983 | 1.000 |
+| single-session-assistant | 1.000 | 1.000 | 1.000 |
+| single-session-preference | 0.633 | 0.867 | 0.933 |
+| single-session-user | 0.922 | 1.000 | 1.000 |
+| temporal-reasoning | 0.835 | 0.976 | 0.984 |
+
+---
+
 ## Installation
 
 ```bash
