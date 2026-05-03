@@ -17,6 +17,11 @@ name = "mempalace"
 path = "src/main.rs"
 required-features = ["cli"]
 
+[[bin]]
+name = "mempalace-bench"
+path = "src/bin/mempalace-bench.rs"
+required-features = ["benchmarks"]
+
 [lib]
 name = "mempalace"
 path = "src/lib.rs"
@@ -24,6 +29,7 @@ path = "src/lib.rs"
 [features]
 default = ["cli"]
 cli = ["dep:clap"]
+benchmarks = ["dep:clap"]
 llm = []
 
 [dependencies]

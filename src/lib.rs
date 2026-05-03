@@ -1,5 +1,7 @@
 pub mod backend;
 pub mod backends;
+#[cfg(feature = "benchmarks")]
+pub mod benchmarks;
 pub mod closet;
 pub mod config;
 pub mod convo_miner;

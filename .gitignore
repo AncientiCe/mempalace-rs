@@ -1,4 +1,4 @@
-/target/
+target/
 /.fastembed_cache/
 /.idea/
 
@@ -17,3 +17,7 @@
 # OS-generated files
 .DS_Store
 Thumbs.db
+
+# Benchmark datasets (downloaded locally; not for git)
+/data/
+
