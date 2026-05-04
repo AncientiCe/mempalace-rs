@@ -27,6 +27,10 @@ detect_target() {
     echo "Linux ARM64 release binaries are not shipped in v1; build from source with cargo install --path . for now." >&2
     exit 1
   fi
+  if [ "$os_part" = "apple-darwin" ] && [ "$arch_part" = "x86_64" ]; then
+    echo "macOS Intel release binaries are not shipped in v1 because ONNX Runtime is not available for this target; build from source for now." >&2
+    exit 1
+  fi
   printf '%s-%s' "$arch_part" "$os_part"
 }
 
