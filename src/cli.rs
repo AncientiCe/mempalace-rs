@@ -145,6 +145,60 @@ enum Commands {
         /// Source palace.db path
         source: PathBuf,
     },
+    /// Register the MCP server with local AI clients
+    Install {
+        /// Client to configure: cursor, codex, claude, or all
+        #[arg(long, default_value = "all")]
+        client: String,
+        /// Configure all supported clients
+        #[arg(long)]
+        all: bool,
+        /// Config scope: user or project
+        #[arg(long, default_value = "user")]
+        scope: String,
+        /// Project directory for project-scoped Cursor config
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Preview changes without writing files
+        #[arg(long)]
+        dry_run: bool,
+        /// Reserved for future overwrite prompts
+        #[arg(long)]
+        force: bool,
+    },
+    /// Remove the MemPalace MCP server from local AI clients
+    Uninstall {
+        /// Client to configure: cursor, codex, claude, or all
+        #[arg(long, default_value = "all")]
+        client: String,
+        /// Remove all supported clients
+        #[arg(long)]
+        all: bool,
+        /// Config scope: user or project
+        #[arg(long, default_value = "user")]
+        scope: String,
+        /// Project directory for project-scoped Cursor config
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Preview changes without writing files
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Show MCP client configuration and palace status
+    Doctor {
+        /// Client to inspect: cursor, codex, claude, or all
+        #[arg(long, default_value = "all")]
+        client: String,
+        /// Inspect all supported clients
+        #[arg(long)]
+        all: bool,
+        /// Config scope: user or project
+        #[arg(long, default_value = "user")]
+        scope: String,
+        /// Project directory for project-scoped Cursor config
+        #[arg(long)]
+        path: Option<PathBuf>,
+    },
     /// Start the MCP stdio server
     Mcp,
 }
@@ -344,10 +398,77 @@ pub fn run() -> Result<()> {
             println!("  Migrated {migrated} drawers.");
         }
 
+        Commands::Install {
+            client,
+            all,
+            scope,
+            path,
+            dry_run,
+            force,
+        } => {
+            let options = install_options(&client, all, &scope, path, dry_run, force)?;
+            let report = crate::install::install_clients(&options)?;
+            let action = if dry_run { "would update" } else { "updated" };
+            crate::install::print_install_report(action, &report);
+            if !dry_run {
+                println!("  Restart Cursor, Codex, or Claude Code to load the MCP server.");
+            }
+        }
+
+        Commands::Uninstall {
+            client,
+            all,
+            scope,
+            path,
+            dry_run,
+        } => {
+            let options = install_options(&client, all, &scope, path, dry_run, false)?;
+            let report = crate::install::uninstall_clients(&options)?;
+            let action = if dry_run { "would update" } else { "updated" };
+            crate::install::print_install_report(action, &report);
+        }
+
+        Commands::Doctor {
+            client,
+            all,
+            scope,
+            path,
+        } => {
+            let options = install_options(&client, all, &scope, path, false, false)?;
+            let report = crate::install::doctor(&options)?;
+            crate::install::print_doctor_report(&report);
+        }
+
         Commands::Mcp => {
             crate::mcp_server::run()?;
         }
     }
 
     Ok(())
+}
+
+fn install_options(
+    client: &str,
+    all: bool,
+    scope: &str,
+    path: Option<PathBuf>,
+    dry_run: bool,
+    force: bool,
+) -> Result<crate::install::InstallOptions> {
+    let client = if all {
+        crate::install::Client::All
+    } else {
+        client.parse::<crate::install::Client>()?
+    };
+    let scope = scope.parse::<crate::install::Scope>()?;
+    let project_dir = match (scope, path) {
+        (crate::install::Scope::Project, Some(path)) => Some(path),
+        (crate::install::Scope::Project, None) => Some(std::env::current_dir()?),
+        (crate::install::Scope::User, path) => path,
+    };
+    let mut options =
+        crate::install::InstallOptions::for_current_process(vec![client], scope, project_dir)?;
+    options.dry_run = dry_run;
+    options.force = force;
+    Ok(options)
 }

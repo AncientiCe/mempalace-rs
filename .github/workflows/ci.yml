@@ -86,3 +86,66 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Run tests
         run: cargo test --all-features
+
+  install-script:
+    name: Install script smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build release binary
+        run: cargo build --release --features cli
+      - name: Package Unix artifact
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          mkdir -p "dist/mempalace-local-${{ matrix.target }}"
+          cp target/release/mempalace "dist/mempalace-local-${{ matrix.target }}/"
+          tar -C dist -czf "dist/mempalace-local-${{ matrix.target }}.tar.gz" "mempalace-local-${{ matrix.target }}"
+      - name: Package Windows artifact
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "dist/mempalace-local-${{ matrix.target }}" | Out-Null
+          Copy-Item "target/release/mempalace.exe" "dist/mempalace-local-${{ matrix.target }}/"
+          Compress-Archive -Path "dist/mempalace-local-${{ matrix.target }}/*" -DestinationPath "dist/mempalace-local-${{ matrix.target }}.zip"
+      - name: Run Unix install script
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        env:
+          MEMPALACE_VERSION: local
+          MEMPALACE_LOCAL_ARCHIVE: ${{ github.workspace }}/dist/mempalace-local-${{ matrix.target }}.tar.gz
+          MEMPALACE_INSTALL_DIR: ${{ runner.temp }}/mempalace-bin
+          HOME: ${{ runner.temp }}/mempalace-home
+        run: |
+          mkdir -p "$HOME"
+          sh scripts/install.sh
+          "$MEMPALACE_INSTALL_DIR/mempalace" --version
+          test -f "$HOME/.cursor/mcp.json"
+      - name: Run Windows install script
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        env:
+          MEMPALACE_VERSION: local
+          MEMPALACE_LOCAL_ARCHIVE: ${{ github.workspace }}/dist/mempalace-local-${{ matrix.target }}.zip
+          MEMPALACE_INSTALL_DIR: ${{ runner.temp }}\mempalace-bin
+        run: |
+          $env:HOME = Join-Path $env:RUNNER_TEMP "mempalace-home"
+          New-Item -ItemType Directory -Force -Path $env:HOME | Out-Null
+          ./scripts/install.ps1
+          & (Join-Path $env:MEMPALACE_INSTALL_DIR "mempalace.exe") --version
+          if (-not (Test-Path (Join-Path $env:HOME ".cursor/mcp.json"))) { throw "Cursor config was not written" }

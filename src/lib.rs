@@ -10,6 +10,7 @@ pub mod entity_detector;
 pub mod general_extractor;
 pub mod hall_router;
 pub mod i18n;
+pub mod install;
 pub mod knowledge_graph;
 pub mod layers;
 pub mod llm;

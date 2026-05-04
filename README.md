@@ -78,10 +78,27 @@ Per-question-type on `s_cleaned`:
 
 ## Installation
 
+### macOS / Linux
+
 ```bash
-git clone https://github.com/AncientiCe/mempalace-rs
-cd mempalace-rs
+curl -fsSL https://raw.githubusercontent.com/AncientiCe/mempalace-rs/main/scripts/install.sh | sh
+```
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/AncientiCe/mempalace-rs/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the matching GitHub Release binary, verifies its SHA-256
+checksum, installs it locally, and registers the MCP server with Cursor, Codex,
+and Claude Code.
+
+Development install:
+
+```bash
 cargo install --path .
+mempalace install --all
 ```
 
 The first time you run `mine`, the embedding model is downloaded automatically from HuggingFace and cached.
@@ -121,6 +138,9 @@ mempalace wake-up
 | `mempalace status` | Palace overview: drawer counts by wing/room |
 | `mempalace split` | Split Claude Code mega-transcripts by session |
 | `mempalace repair` | Re-embed any drawers missing vectors |
+| `mempalace install` | Register the MCP server with Cursor, Codex, and Claude Code |
+| `mempalace uninstall` | Remove MemPalace from MCP client configs |
+| `mempalace doctor` | Inspect binary path, palace DB, and MCP config status |
 | `mempalace mcp` | Start the MCP stdio server |
 
 ### `mine` flags
@@ -155,28 +175,54 @@ mempalace split \
 
 ---
 
-## MCP Setup for Claude Code
+## MCP Setup
 
-Replace the Python server with the native Rust binary — zero config changes needed:
+For Cursor, Codex, and Claude Code:
 
 ```bash
-# Remove old Python MCP server
-claude mcp remove mempalace
-
-# Add Rust version (same tool names/schemas)
-claude mcp add mempalace -- mempalace mcp
+mempalace install --all
 ```
 
-Or add manually to `~/.claude/mcp_servers.json`:
+This writes the local `mempalace mcp` stdio server into:
+
+- Cursor: `~/.cursor/mcp.json`
+- Codex: `~/.codex/config.toml`
+- Claude Code: `~/.claude/mcp_servers.json`
+
+For a project-local Cursor config:
+
+```bash
+mempalace install --client cursor --scope project --path /path/to/project
+```
+
+To inspect the current setup:
+
+```bash
+mempalace doctor
+```
+
+Manual Cursor / Claude JSON shape:
 
 ```json
 {
-  "mempalace": {
-    "command": "mempalace",
-    "args": ["mcp"]
+  "mcpServers": {
+    "mempalace": {
+      "command": "mempalace",
+      "args": ["mcp"]
+    }
   }
 }
 ```
+
+Manual Codex TOML shape:
+
+```toml
+[mcp_servers.mempalace]
+command = "mempalace"
+args = ["mcp"]
+```
+
+Restart your agent after changing MCP configuration.
 
 ### MCP Tools
 
@@ -225,6 +271,21 @@ mempalace status
 ```
 
 Your `identity.txt`, `people_map.json`, and `known_names.json` in `~/.mempalace/` are compatible and will be read automatically.
+
+---
+
+## Test on a Project
+
+```bash
+mempalace init /path/to/project
+mempalace mine /path/to/project
+mempalace status
+```
+
+Restart Cursor, Codex, or Claude Code, then ask the agent a project question that
+should use memory, for example: "Search MemPalace for how this project handles
+database migrations." The agent should call `mempalace_search` through MCP
+instead of re-indexing the repository from scratch.
 
 ---
 
