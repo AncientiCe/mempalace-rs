@@ -6,6 +6,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use toml_edit::{value, Array, DocumentMut, Item, Table};
 
+const RULE_BEGIN: &str = "<!-- BEGIN MEMPALACE -->";
+const RULE_END: &str = "<!-- END MEMPALACE -->";
+const RULE_BODY: &str = "Before answering about a person, project, past decision, or user preference,\ncall `mempalace_search` (or `mempalace_kg_query` for entity facts). On session\nstart, call `mempalace_status` once. After substantive work, call\n`mempalace_diary_write`. When a stored fact changes, call\n`mempalace_kg_invalidate` then `mempalace_kg_add`. Storage is not memory; this\nprotocol is.";
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Client {
@@ -31,12 +35,15 @@ pub struct InstallOptions {
     pub binary_path: PathBuf,
     pub dry_run: bool,
     pub force: bool,
+    pub install_rule: bool,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct InstallReport {
     pub changed: Vec<PathBuf>,
     pub unchanged: Vec<PathBuf>,
+    pub rule_changed: Vec<PathBuf>,
+    pub rule_unchanged: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +53,8 @@ pub struct ClientStatus {
     pub configured: bool,
     pub points_to_expected_binary: bool,
     pub command: Option<String>,
+    pub rule_path: PathBuf,
+    pub rule_installed: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -116,6 +125,7 @@ impl InstallOptions {
             binary_path: std::env::current_exe().context("failed to resolve current executable")?,
             dry_run: false,
             force: false,
+            install_rule: true,
         })
     }
 }
@@ -136,6 +146,15 @@ pub fn install_clients(options: &InstallOptions) -> Result<InstallReport> {
         } else {
             report.unchanged.push(path);
         }
+        if options.install_rule {
+            let target = rule_target(options, client)?;
+            let changed = install_rule(&target, options.dry_run)?;
+            if changed {
+                report.rule_changed.push(target.path);
+            } else {
+                report.rule_unchanged.push(target.path);
+            }
+        }
     }
     Ok(report)
 }
@@ -153,6 +172,15 @@ pub fn uninstall_clients(options: &InstallOptions) -> Result<InstallReport> {
             report.changed.push(path);
         } else {
             report.unchanged.push(path);
+        }
+        if options.install_rule {
+            let target = rule_target(options, client)?;
+            let changed = uninstall_rule(&target, options.dry_run)?;
+            if changed {
+                report.rule_changed.push(target.path);
+            } else {
+                report.rule_unchanged.push(target.path);
+            }
         }
     }
     Ok(report)
@@ -172,14 +200,18 @@ pub fn doctor(options: &InstallOptions) -> Result<DoctorReport> {
     let mut clients = Vec::new();
     for client in expand_clients(&options.clients) {
         let path = config_path(options, client)?;
+        let target = rule_target(options, client)?;
         let command = read_configured_command(client, &path)?;
         let expected = path_to_string(&options.binary_path);
+        let rule_installed = rule_installed(&target)?;
         clients.push(ClientStatus {
             client,
             path,
             configured: command.is_some(),
             points_to_expected_binary: command.as_deref() == Some(expected.as_str()),
             command,
+            rule_path: target.path,
+            rule_installed,
         });
     }
 
@@ -197,6 +229,12 @@ pub fn print_install_report(action: &str, report: &InstallReport) {
     }
     for path in &report.unchanged {
         println!("  unchanged: {}", path.display());
+    }
+    for path in &report.rule_changed {
+        println!("  rule {action}: {}", path.display());
+    }
+    for path in &report.rule_unchanged {
+        println!("  rule unchanged: {}", path.display());
     }
 }
 
@@ -217,6 +255,12 @@ pub fn print_doctor_report(report: &DoctorReport) {
             "missing"
         };
         println!("  {}: {state} ({})", status.client, status.path.display());
+        let rule_state = if status.rule_installed {
+            "rule installed"
+        } else {
+            "rule missing"
+        };
+        println!("      {rule_state} ({})", status.rule_path.display());
     }
     if report.drawer_count.unwrap_or(0) == 0 {
         println!("  Next: mempalace init <project> && mempalace mine <project>");
@@ -250,6 +294,42 @@ fn config_path(options: &InstallOptions, client: Client) -> Result<PathBuf> {
         Client::Claude => Ok(options.home_dir.join(".claude").join("mcp_servers.json")),
         Client::All => Err(anyhow!("all is not a concrete client")),
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RuleKind {
+    Standalone,
+    ManagedBlock,
+}
+
+#[derive(Clone, Debug)]
+struct RuleTarget {
+    path: PathBuf,
+    kind: RuleKind,
+}
+
+fn rule_target(options: &InstallOptions, client: Client) -> Result<RuleTarget> {
+    let project_dir = || {
+        options
+            .project_dir
+            .as_ref()
+            .ok_or_else(|| anyhow!("--path is required for project-scope rule installs"))
+    };
+    let path = match (client, options.scope) {
+        (Client::Cursor, Scope::User) => options.home_dir.join(".cursor/rules/mempalace.mdc"),
+        (Client::Cursor, Scope::Project) => project_dir()?.join(".cursor/rules/mempalace.mdc"),
+        (Client::Codex, Scope::User) => options.home_dir.join(".codex/AGENTS.md"),
+        (Client::Codex, Scope::Project) => project_dir()?.join("AGENTS.md"),
+        (Client::Claude, Scope::User) => options.home_dir.join(".claude/CLAUDE.md"),
+        (Client::Claude, Scope::Project) => project_dir()?.join("CLAUDE.md"),
+        (Client::All, _) => return Err(anyhow!("all is not a concrete client")),
+    };
+    let kind = match client {
+        Client::Cursor => RuleKind::Standalone,
+        Client::Codex | Client::Claude => RuleKind::ManagedBlock,
+        Client::All => return Err(anyhow!("all is not a concrete client")),
+    };
+    Ok(RuleTarget { path, kind })
 }
 
 fn home_dir() -> Result<PathBuf> {
@@ -404,6 +484,129 @@ fn write_toml_if_changed(
     fs::write(path, next.to_string())
         .with_context(|| format!("failed to write {}", path.display()))?;
     Ok(true)
+}
+
+fn install_rule(target: &RuleTarget, dry_run: bool) -> Result<bool> {
+    let existing = read_text_file(&target.path)?;
+    let next = match target.kind {
+        RuleKind::Standalone => cursor_rule_text(),
+        RuleKind::ManagedBlock => upsert_managed_rule(&existing)?,
+    };
+    write_text_if_changed(&target.path, &existing, &next, dry_run)
+}
+
+fn uninstall_rule(target: &RuleTarget, dry_run: bool) -> Result<bool> {
+    if !target.path.exists() {
+        return Ok(false);
+    }
+    let existing = read_text_file(&target.path)?;
+    let next = match target.kind {
+        RuleKind::Standalone => String::new(),
+        RuleKind::ManagedBlock => remove_managed_rule(&existing)?,
+    };
+    if target.kind == RuleKind::Standalone {
+        if dry_run {
+            return Ok(true);
+        }
+        backup_existing(&target.path)?;
+        fs::remove_file(&target.path)
+            .with_context(|| format!("failed to remove {}", target.path.display()))?;
+        return Ok(true);
+    }
+    write_text_if_changed(&target.path, &existing, &next, dry_run)
+}
+
+fn rule_installed(target: &RuleTarget) -> Result<bool> {
+    if !target.path.exists() {
+        return Ok(false);
+    }
+    let text = read_text_file(&target.path)?;
+    Ok(match target.kind {
+        RuleKind::Standalone => text == cursor_rule_text(),
+        RuleKind::ManagedBlock => find_managed_block(&text)?.is_some(),
+    })
+}
+
+fn read_text_file(path: &Path) -> Result<String> {
+    if !path.exists() {
+        return Ok(String::new());
+    }
+    fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))
+}
+
+fn write_text_if_changed(path: &Path, existing: &str, next: &str, dry_run: bool) -> Result<bool> {
+    if existing == next {
+        return Ok(false);
+    }
+    if dry_run {
+        return Ok(true);
+    }
+    backup_existing(path)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| anyhow!("rule path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+    fs::write(path, next).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(true)
+}
+
+fn cursor_rule_text() -> String {
+    format!(
+        "---\ndescription: Consult MemPalace memory before answering about remembered facts\nalwaysApply: true\n---\n\n# MemPalace Memory Protocol\n\n{RULE_BODY}\n"
+    )
+}
+
+fn managed_rule_block() -> String {
+    format!("{RULE_BEGIN}\n# MemPalace Memory Protocol\n\n{RULE_BODY}\n{RULE_END}")
+}
+
+fn upsert_managed_rule(existing: &str) -> Result<String> {
+    let block = managed_rule_block();
+    if let Some((start, end)) = find_managed_block(existing)? {
+        let mut next = String::with_capacity(existing.len() + block.len());
+        next.push_str(&existing[..start]);
+        next.push_str(&block);
+        next.push_str(&existing[end..]);
+        return Ok(next);
+    }
+
+    if existing.is_empty() {
+        return Ok(format!("{block}\n"));
+    }
+
+    let separator = if existing.ends_with("\n\n") {
+        ""
+    } else if existing.ends_with('\n') {
+        "\n"
+    } else {
+        "\n\n"
+    };
+    Ok(format!("{existing}{separator}{block}\n"))
+}
+
+fn remove_managed_rule(existing: &str) -> Result<String> {
+    let Some((start, end)) = find_managed_block(existing)? else {
+        return Ok(existing.to_string());
+    };
+    let mut next = String::with_capacity(existing.len());
+    next.push_str(&existing[..start]);
+    next.push_str(&existing[end..]);
+    while next.contains("\n\n\n") {
+        next = next.replace("\n\n\n", "\n\n");
+    }
+    Ok(next)
+}
+
+fn find_managed_block(text: &str) -> Result<Option<(usize, usize)>> {
+    let Some(start) = text.find(RULE_BEGIN) else {
+        return Ok(None);
+    };
+    let search_from = start + RULE_BEGIN.len();
+    let end_relative = text[search_from..]
+        .find(RULE_END)
+        .ok_or_else(|| anyhow!("managed MemPalace rule block is missing end marker"))?;
+    let end = search_from + end_relative + RULE_END.len();
+    Ok(Some((start, end)))
 }
 
 fn backup_existing(path: &Path) -> Result<()> {

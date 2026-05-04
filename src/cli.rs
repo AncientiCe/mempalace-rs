@@ -162,6 +162,9 @@ enum Commands {
         /// Preview changes without writing files
         #[arg(long)]
         dry_run: bool,
+        /// Skip installing agent rule files
+        #[arg(long)]
+        no_rule: bool,
         /// Reserved for future overwrite prompts
         #[arg(long)]
         force: bool,
@@ -183,6 +186,9 @@ enum Commands {
         /// Preview changes without writing files
         #[arg(long)]
         dry_run: bool,
+        /// Skip removing agent rule files
+        #[arg(long)]
+        no_rule: bool,
     },
     /// Show MCP client configuration and palace status
     Doctor {
@@ -404,9 +410,11 @@ pub fn run() -> Result<()> {
             scope,
             path,
             dry_run,
+            no_rule,
             force,
         } => {
             let options = install_options(&client, all, &scope, path, dry_run, force)?;
+            let options = with_rule_option(options, !no_rule);
             let report = crate::install::install_clients(&options)?;
             let action = if dry_run { "would update" } else { "updated" };
             crate::install::print_install_report(action, &report);
@@ -421,8 +429,10 @@ pub fn run() -> Result<()> {
             scope,
             path,
             dry_run,
+            no_rule,
         } => {
             let options = install_options(&client, all, &scope, path, dry_run, false)?;
+            let options = with_rule_option(options, !no_rule);
             let report = crate::install::uninstall_clients(&options)?;
             let action = if dry_run { "would update" } else { "updated" };
             crate::install::print_install_report(action, &report);
@@ -471,4 +481,12 @@ fn install_options(
     options.dry_run = dry_run;
     options.force = force;
     Ok(options)
+}
+
+fn with_rule_option(
+    mut options: crate::install::InstallOptions,
+    install_rule: bool,
+) -> crate::install::InstallOptions {
+    options.install_rule = install_rule;
+    options
 }

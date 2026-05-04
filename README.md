@@ -98,7 +98,7 @@ Development install:
 
 ```bash
 cargo install --path .
-mempalace install --all
+mempalace install
 ```
 
 The first time you run `mine`, the embedding model is downloaded automatically from HuggingFace and cached.
@@ -108,21 +108,16 @@ The first time you run `mine`, the embedding model is downloaded automatically f
 ## Quick Start
 
 ```bash
-# 1. Detect rooms from your project folder structure
-mempalace init ~/my-project
-
-# 2. Index the project into the palace
-mempalace mine ~/my-project
-
-# 3. Index conversations
-mempalace mine-convos ~/Desktop/transcripts
-
-# 4. Search
-mempalace search "how did we decide on the database schema"
-
-# 5. Wake-up (L0 + L1 context for the AI)
-mempalace wake-up
+cargo install --path .       # development install; release installers do this for you
+mempalace install            # configures Cursor + Codex + Claude Code
+mempalace doctor             # verifies MCP config, rules, binary, and drawer count
+mempalace init ~/my-project  # detect rooms and write mempalace.yaml
+mempalace mine ~/my-project  # populate the palace
 ```
+
+Then restart your agent app so it reloads MCP configuration. Search manually with
+`mempalace search "how did we decide on the database schema"` or let your agent
+call the MCP tools when its installed rule tells it to consult memory.
 
 ---
 
@@ -177,31 +172,69 @@ mempalace split \
 
 ## MCP Setup
 
-For Cursor, Codex, and Claude Code:
+`mempalace install` is the normal setup command for all three major agentic coding
+clients. It writes both:
+
+- an MCP server entry that starts `mempalace mcp`
+- a small rule that tells the agent when to call `mempalace_status`,
+  `mempalace_search`, `mempalace_kg_query`, and `mempalace_diary_write`
 
 ```bash
-mempalace install --all
+mempalace install
 ```
 
-This writes the local `mempalace mcp` stdio server into:
+What gets written by default:
 
-- Cursor: `~/.cursor/mcp.json`
-- Codex: `~/.codex/config.toml`
-- Claude Code: `~/.claude/mcp_servers.json`
+| Client | MCP config | Rule file |
+|---|---|---|
+| Cursor | `~/.cursor/mcp.json` | `~/.cursor/rules/mempalace.mdc` |
+| Codex | `~/.codex/config.toml` | `~/.codex/AGENTS.md` |
+| Claude Code | `~/.claude/mcp_servers.json` | `~/.claude/CLAUDE.md` |
 
-For a project-local Cursor config:
+Install for one client:
 
 ```bash
-mempalace install --client cursor --scope project --path /path/to/project
+mempalace install --client cursor
+mempalace install --client codex
+mempalace install --client claude
 ```
 
-To inspect the current setup:
+Install project-scoped rules instead of global rules:
+
+```bash
+mempalace install --scope project --path /path/to/project
+```
+
+For project scope, Cursor also gets a project-local MCP config at
+`<project>/.cursor/mcp.json`. Codex and Claude Code keep MCP config in their
+user-level config files, while their rules go into `<project>/AGENTS.md` and
+`<project>/CLAUDE.md`.
+
+Skip rule files if you only want MCP wiring:
+
+```bash
+mempalace install --no-rule
+```
+
+Inspect the current setup:
 
 ```bash
 mempalace doctor
 ```
 
-Manual Cursor / Claude JSON shape:
+Remove MemPalace config:
+
+```bash
+mempalace uninstall
+mempalace uninstall --client cursor
+```
+
+### Cursor
+
+After `mempalace install --client cursor`, restart Cursor or reload the window.
+Settings -> MCP should show `mempalace` as an enabled stdio server.
+
+Manual Cursor config shape:
 
 ```json
 {
@@ -214,7 +247,14 @@ Manual Cursor / Claude JSON shape:
 }
 ```
 
-Manual Codex TOML shape:
+The rule is installed as `.cursor/rules/mempalace.mdc` with `alwaysApply: true`.
+
+### Codex
+
+After `mempalace install --client codex`, restart Codex so it reloads
+`~/.codex/config.toml`.
+
+Manual Codex config shape:
 
 ```toml
 [mcp_servers.mempalace]
@@ -222,7 +262,24 @@ command = "mempalace"
 args = ["mcp"]
 ```
 
-Restart your agent after changing MCP configuration.
+The rule is installed as a managed MemPalace block in `~/.codex/AGENTS.md` (or
+`<project>/AGENTS.md` with `--scope project`). Existing content is preserved.
+
+### Claude Code
+
+After `mempalace install --client claude`, restart Claude Code so it reloads
+`~/.claude/mcp_servers.json`.
+
+Manual Claude JSON shape is the same as Cursor's `mcpServers` object above.
+You can also use Claude Code's own MCP command:
+
+```bash
+claude mcp remove mempalace
+claude mcp add mempalace -- mempalace mcp
+```
+
+The rule is installed as a managed MemPalace block in `~/.claude/CLAUDE.md` (or
+`<project>/CLAUDE.md` with `--scope project`). Existing content is preserved.
 
 ### MCP Tools
 
