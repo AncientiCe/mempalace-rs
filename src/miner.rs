@@ -31,6 +31,21 @@ static SKIP_FILENAMES: &[&str] = &[
     "package-lock.json",
 ];
 
+/// Walk `index` back to the nearest UTF-8 char boundary at or below it.
+///
+/// `str::floor_char_boundary` is unstable, so this provides the same behaviour
+/// on stable Rust. `index` may be `s.len()`; the result is always a valid byte
+/// offset into `s`.
+fn floor_char_boundary(s: &str, mut index: usize) -> usize {
+    if index >= s.len() {
+        return s.len();
+    }
+    while index > 0 && !s.is_char_boundary(index) {
+        index -= 1;
+    }
+    index
+}
+
 /// Split content into overlapping chunks, preferring paragraph/line boundaries.
 pub fn chunk_text(content: &str) -> Vec<(String, usize)> {
     let content = content.trim();
@@ -45,7 +60,7 @@ pub fn chunk_text(content: &str) -> Vec<(String, usize)> {
     let mut chunk_index = 0;
 
     while start < total {
-        let end = (start + CHUNK_SIZE).min(total);
+        let end = floor_char_boundary(content, (start + CHUNK_SIZE).min(total));
         let mut cut = end;
 
         // Try to break at double newline first
@@ -72,7 +87,10 @@ pub fn chunk_text(content: &str) -> Vec<(String, usize)> {
         if cut >= total {
             break;
         }
-        start = cut.saturating_sub(CHUNK_OVERLAP);
+        let next = cut.saturating_sub(CHUNK_OVERLAP);
+        let next = floor_char_boundary(content, next);
+        // Guarantee forward progress even if boundary rewind collapses the window.
+        start = if next > start { next } else { cut };
     }
 
     chunks
