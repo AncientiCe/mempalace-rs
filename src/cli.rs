@@ -106,6 +106,27 @@ enum Commands {
     },
     /// Show palace status (drawer counts by wing/room)
     Status,
+    /// Show automatic MCP usage gains and estimated savings
+    Gain {
+        /// Filter to one project
+        #[arg(long)]
+        project: Option<String>,
+        /// Time window: 7d, 24h, 30d, or all
+        #[arg(long, default_value = "30d")]
+        since: String,
+        /// Show recent usage events instead of the summary
+        #[arg(long)]
+        history: bool,
+        /// History event limit
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Print machine-readable JSON
+        #[arg(long)]
+        json: bool,
+        /// Delete gain usage events, optionally only for --project
+        #[arg(long)]
+        reset: bool,
+    },
     /// Compress drawers to AAAK format
     Compress,
     /// Split concatenated Claude Code mega transcripts into per-session files
@@ -351,6 +372,63 @@ pub fn run() -> Result<()> {
             }
             let conn = crate::db::open(&db_path)?;
             crate::miner::status(&conn, &db_path)?;
+        }
+
+        Commands::Gain {
+            project,
+            since,
+            history,
+            limit,
+            json,
+            reset,
+        } => {
+            let db_path = config.palace_db_path();
+            if !db_path.exists() {
+                println!("\n  No palace found at {}", db_path.display());
+                println!("  Run: mempalace init <dir> then mempalace mine <dir>");
+                return Ok(());
+            }
+            let conn = crate::db::open(&db_path)?;
+            let since = crate::gain::SinceWindow::parse(&since)?;
+            let options = crate::gain::GainOptions {
+                project: project.clone(),
+                since,
+            };
+
+            if reset {
+                let deleted = crate::gain::reset(&conn, project.as_deref())?;
+                if json {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "success": true,
+                            "deleted": deleted,
+                            "project": project
+                        }))?
+                    );
+                } else if let Some(project) = project {
+                    println!("Deleted {deleted} MemPalace gain events for project {project}.");
+                } else {
+                    println!("Deleted {deleted} MemPalace gain events.");
+                }
+                return Ok(());
+            }
+
+            if history {
+                let events = crate::gain::history(&conn, &options, limit)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&events)?);
+                } else {
+                    print!("{}", crate::gain::render_history(&events));
+                }
+            } else {
+                let report = crate::gain::summarize(&conn, &options)?;
+                if json {
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    print!("{}", crate::gain::render_text(&report));
+                }
+            }
         }
 
         Commands::Compress => {

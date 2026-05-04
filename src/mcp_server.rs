@@ -12,6 +12,7 @@ use chrono::Utc;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
+use std::time::Instant;
 
 use crate::config::MempalaceConfig;
 use crate::dialect::{AAAK_SPEC, PALACE_PROTOCOL};
@@ -41,6 +42,7 @@ pub fn run() -> Result<()> {
         "MemPalace MCP Server starting... palace={}",
         db_path.display()
     );
+    let session = crate::usage::UsageSession::new();
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -70,7 +72,7 @@ pub fn run() -> Result<()> {
             }
         };
 
-        if let Some(response) = handle_request(&conn, &config, &request) {
+        if let Some(response) = handle_request(&conn, &config, &session, &request) {
             let mut out = stdout.lock();
             writeln!(out, "{response}")?;
             out.flush()?;
@@ -80,7 +82,12 @@ pub fn run() -> Result<()> {
     Ok(())
 }
 
-fn handle_request(conn: &Connection, config: &MempalaceConfig, req: &Value) -> Option<String> {
+fn handle_request(
+    conn: &Connection,
+    config: &MempalaceConfig,
+    session: &crate::usage::UsageSession,
+    req: &Value,
+) -> Option<String> {
     let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
     let params = req.get("params").cloned().unwrap_or_default();
     let req_id = req.get("id").cloned().unwrap_or(Value::Null);
@@ -102,7 +109,7 @@ fn handle_request(conn: &Connection, config: &MempalaceConfig, req: &Value) -> O
         "tools/call" => {
             let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_default();
-            let result = dispatch_tool(conn, config, tool_name, &args);
+            let result = dispatch_tool_with_usage(conn, config, session, tool_name, &args);
             Some(json!({
                 "content": [{"type": "text", "text": serde_json::to_string_pretty(&result).unwrap_or_default()}]
             }))
@@ -129,7 +136,29 @@ fn handle_request(conn: &Connection, config: &MempalaceConfig, req: &Value) -> O
     })
 }
 
-fn dispatch_tool(conn: &Connection, config: &MempalaceConfig, name: &str, args: &Value) -> Value {
+pub fn dispatch_tool_with_usage(
+    conn: &Connection,
+    config: &MempalaceConfig,
+    session: &crate::usage::UsageSession,
+    name: &str,
+    args: &Value,
+) -> Value {
+    let start = Instant::now();
+    let result = dispatch_tool(conn, config, name, args);
+    if let Err(err) =
+        crate::usage::record_event(conn, session, name, args, &result, start.elapsed())
+    {
+        eprintln!("MemPalace MCP: failed to record usage event: {err}");
+    }
+    result
+}
+
+pub fn dispatch_tool(
+    conn: &Connection,
+    config: &MempalaceConfig,
+    name: &str,
+    args: &Value,
+) -> Value {
     match name {
         "mempalace_status" => tool_status(conn, config),
         "mempalace_list_wings" => tool_list_wings(conn),
@@ -160,6 +189,7 @@ fn dispatch_tool(conn: &Connection, config: &MempalaceConfig, name: &str, args: 
         "mempalace_list_agents" => tool_list_agents(conn),
         "mempalace_diary_write" => tool_diary_write(conn, args),
         "mempalace_diary_read" => tool_diary_read(conn, args),
+        "mempalace_gain" => tool_gain(conn, args),
         _ => json!({"error": format!("Unknown tool: {name}")}),
     }
 }
@@ -190,6 +220,35 @@ fn tool_status(conn: &Connection, config: &MempalaceConfig) -> Value {
         "protocol": PALACE_PROTOCOL,
         "aaak_dialect": AAAK_SPEC,
     })
+}
+
+fn tool_gain(conn: &Connection, args: &Value) -> Value {
+    let project = str_arg(args, "project");
+    let since_text = str_arg(args, "since").unwrap_or_else(|| "30d".to_string());
+    let since = match crate::gain::SinceWindow::parse(&since_text) {
+        Ok(window) => window,
+        Err(err) => return json!({"error": err.to_string()}),
+    };
+    if bool_arg(args, "reset") {
+        return match crate::gain::reset(conn, project.as_deref()) {
+            Ok(deleted) => json!({"success": true, "deleted": deleted, "project": project}),
+            Err(err) => json!({"success": false, "error": err.to_string()}),
+        };
+    }
+
+    let options = crate::gain::GainOptions { project, since };
+    if bool_arg(args, "history") {
+        let limit = int_arg(args, "limit").unwrap_or(20).max(0) as usize;
+        return match crate::gain::history(conn, &options, limit) {
+            Ok(events) => json!({"history": events}),
+            Err(err) => json!({"error": err.to_string()}),
+        };
+    }
+
+    match crate::gain::summarize(conn, &options) {
+        Ok(report) => json!(report),
+        Err(err) => json!({"error": err.to_string()}),
+    }
 }
 
 fn tool_list_wings(conn: &Connection) -> Value {
@@ -663,6 +722,20 @@ fn tool_list() -> Value {
             "inputSchema": {"type": "object", "properties": {}}
         },
         {
+            "name": "mempalace_gain",
+            "description": "Show local MCP usage gains: hits, estimated tokens saved, skipped duplicates, recall, latency, and per-project value.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string", "description": "Project to filter by (optional)"},
+                    "since": {"type": "string", "description": "Window like 7d, 24h, 30d, or all (default: 30d)"},
+                    "history": {"type": "boolean", "description": "Return recent usage events instead of summary"},
+                    "limit": {"type": "integer", "description": "History limit (default: 20)"},
+                    "reset": {"type": "boolean", "description": "Delete usage events for the project, or all projects if omitted"}
+                }
+            }
+        },
+        {
             "name": "mempalace_list_wings",
             "description": "List all wings with drawer counts",
             "inputSchema": {"type": "object", "properties": {}}
@@ -951,6 +1024,21 @@ fn int_arg(args: &Value, key: &str) -> Option<i64> {
             None
         }
     })
+}
+
+fn bool_arg(args: &Value, key: &str) -> bool {
+    args.get(key)
+        .and_then(|value| {
+            value.as_bool().or_else(|| {
+                value.as_str().map(|text| {
+                    matches!(
+                        text.trim(),
+                        "1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON"
+                    )
+                })
+            })
+        })
+        .unwrap_or(false)
 }
 
 fn float_arg(args: &Value, key: &str) -> Option<f64> {

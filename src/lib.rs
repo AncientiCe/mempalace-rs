@@ -7,6 +7,7 @@ pub mod db;
 pub mod dialect;
 pub mod embedder;
 pub mod entity_detector;
+pub mod gain;
 pub mod general_extractor;
 pub mod hall_router;
 pub mod i18n;
@@ -29,6 +30,7 @@ pub mod searcher;
 pub mod split;
 pub mod store;
 pub mod sweep;
+pub mod usage;
 
 #[cfg(feature = "cli")]
 pub mod cli;

@@ -137,6 +137,29 @@ fn migrate(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_triples_object    ON triples(object);
         CREATE INDEX IF NOT EXISTS idx_triples_predicate ON triples(predicate);
         CREATE INDEX IF NOT EXISTS idx_triples_valid     ON triples(valid_from, valid_to);
+
+        -- ── Usage telemetry ──────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS usage_events (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts               TEXT NOT NULL,
+            session_id       TEXT NOT NULL,
+            project          TEXT NOT NULL,
+            tool             TEXT NOT NULL,
+            wing             TEXT,
+            room             TEXT,
+            query_hash       TEXT,
+            result_count     INTEGER NOT NULL DEFAULT 0,
+            top_similarity   REAL,
+            bytes_returned   INTEGER NOT NULL DEFAULT 0,
+            est_tokens_saved INTEGER NOT NULL DEFAULT 0,
+            duration_ms      INTEGER NOT NULL DEFAULT 0,
+            outcome          TEXT NOT NULL,
+            meta             TEXT NOT NULL DEFAULT '{}'
+        );
+        CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events(ts);
+        CREATE INDEX IF NOT EXISTS idx_usage_events_project_ts ON usage_events(project, ts);
+        CREATE INDEX IF NOT EXISTS idx_usage_events_tool ON usage_events(tool);
+        CREATE INDEX IF NOT EXISTS idx_usage_events_query_hash ON usage_events(query_hash);
         "#,
     )
     .context("running schema migrations")?;

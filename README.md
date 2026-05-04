@@ -131,6 +131,7 @@ call the MCP tools when its installed rule tells it to consult memory.
 | `mempalace search <query>` | Semantic search with similarity scores |
 | `mempalace wake-up` | Print L0 (identity) + L1 (essential story) context |
 | `mempalace status` | Palace overview: drawer counts by wing/room |
+| `mempalace gain` | Show MCP usage gains, estimated savings, and per-project value |
 | `mempalace split` | Split Claude Code mega-transcripts by session |
 | `mempalace repair` | Re-embed any drawers missing vectors |
 | `mempalace install` | Register the MCP server with Cursor, Codex, and Claude Code |
@@ -167,6 +168,37 @@ mempalace split \
   --min-sessions 2 \
   --dry-run
 ```
+
+### `gain`
+
+`mempalace gain` summarizes automatic MCP usage by Cursor, Codex, Claude Code,
+or any other MCP client. It records local tool-call metadata in `palace.db` and
+estimates value from retrieval hits, duplicate skips, KG facts, diary recalls,
+repeat questions, and latency.
+
+```bash
+mempalace gain
+mempalace gain --project my_project --since 7d
+mempalace gain --history
+mempalace gain --json
+```
+
+Example output:
+
+```text
+MemPalace gain - last 30d (mempalace_rs)
+  Tool calls         : 412   (sessions: 27)
+  Hit rate           : 88%   (search hits 142/162)
+  Tokens saved (est) : ~78,400
+  Re-index skipped   : 31    (duplicate drawers avoided)
+  KG facts recalled  : 56
+  Diary recalls      : 8
+  Repeat Qs avoided  : 19
+  p95 latency        : 41 ms
+  Top wings          : mempalace_rs(120), checkout(40)
+```
+
+Set `MEMPALACE_GAIN_DISABLED=1` to disable usage recording.
 
 ---
 
@@ -289,6 +321,7 @@ graph operations, graph tunnels, hook acknowledgements, and agent diaries:
 | Tool | Description |
 |---|---|
 | `mempalace_status` | Palace overview + protocol |
+| `mempalace_gain` | MCP usage gains, estimated savings, and per-project value |
 | `mempalace_list_wings` | List wings with drawer counts |
 | `mempalace_list_rooms` | List rooms within a wing |
 | `mempalace_get_taxonomy` | Full wing → room → count tree |
