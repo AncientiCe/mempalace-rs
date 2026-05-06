@@ -322,10 +322,7 @@ pub fn vector_search(
                 text: content,
                 wing,
                 room,
-                source_file: std::path::Path::new(&source_file)
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| source_file.clone()),
+                source_file,
                 created_at,
                 similarity: (sim * 1000.0).round() / 1000.0,
             })

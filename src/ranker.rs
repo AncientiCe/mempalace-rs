@@ -10,12 +10,14 @@ const BM25_K1: f64 = 1.5;
 const BM25_B: f64 = 0.75;
 const COSINE_WEIGHT: f64 = 0.65;
 const BM25_WEIGHT: f64 = 0.35;
+const MAX_CODING_BOOST: f64 = 0.35;
 
 #[derive(Debug, Clone)]
 pub struct HybridResult {
     pub drawer: SearchResult,
     pub cosine: f64,
     pub bm25: f64,
+    pub coding_boost: f64,
     pub combined: f64,
 }
 
@@ -26,6 +28,12 @@ pub fn hybrid_search(
     filter: &DrawerFilter,
     n_results: usize,
 ) -> Result<Vec<HybridResult>> {
+    let sanitized_query = crate::query_sanitizer::sanitize_query(query);
+    let query = if sanitized_query.is_empty() {
+        query
+    } else {
+        &sanitized_query
+    };
     let mut by_id: HashMap<String, HybridResult> = HashMap::new();
 
     if let Some(vec) = query_vec {
@@ -36,6 +44,7 @@ pub fn hybrid_search(
                     drawer: result,
                     cosine: 0.0,
                     bm25: 0.0,
+                    coding_boost: 0.0,
                     combined: 0.0,
                 },
             );
@@ -54,15 +63,13 @@ pub fn hybrid_search(
                         text: drawer.content,
                         wing: drawer.wing,
                         room: drawer.room,
-                        source_file: std::path::Path::new(&drawer.source_file)
-                            .file_name()
-                            .map(|name| name.to_string_lossy().into_owned())
-                            .unwrap_or(drawer.source_file),
+                        source_file: drawer.source_file,
                         created_at: drawer.created_at,
                         similarity: 0.0,
                     },
                     cosine: 0.0,
                     bm25: score,
+                    coding_boost: 0.0,
                     combined: 0.0,
                 },
             );
@@ -80,9 +87,9 @@ pub fn hybrid_search(
         } else {
             0.0
         };
-        let preference_boost = preference_boost(query, &result.drawer.text);
+        result.coding_boost = coding_agent_boost(query, &result.drawer.text, &result.drawer.room);
         result.combined =
-            (result.cosine * COSINE_WEIGHT) + (normalized_bm25 * BM25_WEIGHT) + preference_boost;
+            (result.cosine * COSINE_WEIGHT) + (normalized_bm25 * BM25_WEIGHT) + result.coding_boost;
         result.drawer.similarity = (result.combined * 1000.0).round() / 1000.0;
     }
 
@@ -174,13 +181,127 @@ fn bm25_scores(
     Ok(scores)
 }
 
-fn preference_boost(query: &str, text: &str) -> f64 {
+fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
     let query_lower = query.to_lowercase();
     let text_lower = text.to_lowercase();
-    if query_lower.contains("prefer") && text_lower.contains("prefer") {
-        0.05
-    } else {
-        0.0
+    let room_lower = room.to_lowercase();
+    let mut boost: f64 = 0.0;
+
+    boost += intent_boost(
+        &query_lower,
+        &text_lower,
+        &room_lower,
+        &["why", "choose", "chose", "decided", "decision", "settled"],
+        &[
+            "decided",
+            "chose",
+            "because",
+            "instead of",
+            "rather than",
+            "tradeoff",
+            "settled on",
+        ],
+        &["decision", "decisions"],
+        0.11,
+    );
+    boost += intent_boost(
+        &query_lower,
+        &text_lower,
+        &room_lower,
+        &[
+            "fix",
+            "fixed",
+            "failed",
+            "failure",
+            "broke",
+            "broken",
+            "error",
+            "last time",
+        ],
+        &[
+            "fix",
+            "fixed",
+            "failed",
+            "because",
+            "root cause",
+            "resolved",
+            "workaround",
+        ],
+        &["problem", "problems", "fixes"],
+        0.12,
+    );
+    boost += intent_boost(
+        &query_lower,
+        &text_lower,
+        &room_lower,
+        &[
+            "command", "run", "test", "clippy", "fmt", "audit", "cargo", "npm",
+        ],
+        &[
+            "run ", "cargo ", "npm ", "pytest", "clippy", "fmt", "audit", "--",
+        ],
+        &["command", "commands"],
+        0.12,
+    );
+    boost += intent_boost(
+        &query_lower,
+        &text_lower,
+        &room_lower,
+        &["convention", "rule", "usually", "should", "how do we"],
+        &["convention", "rule", "always", "never", "should", "must"],
+        &["convention", "conventions"],
+        0.11,
+    );
+    boost += intent_boost(
+        &query_lower,
+        &text_lower,
+        &room_lower,
+        &[
+            "prefer",
+            "preference",
+            "user want",
+            "user like",
+            "feel about",
+        ],
+        &["prefer", "preference", "user", "does not want", "values"],
+        &["preference", "preferences"],
+        0.12,
+    );
+    boost += intent_boost(
+        &query_lower,
+        &text_lower,
+        &room_lower,
+        &["current", "changed", "now", "last", "before", "direction"],
+        &["current", "changed", "now", "from", "to", "direction"],
+        &["current", "temporal"],
+        0.10,
+    );
+
+    if text_lower.contains(&query_lower) {
+        boost += 0.04;
+    }
+    boost.min(MAX_CODING_BOOST)
+}
+
+fn intent_boost(
+    query: &str,
+    text: &str,
+    room: &str,
+    query_terms: &[&str],
+    text_terms: &[&str],
+    rooms: &[&str],
+    amount: f64,
+) -> f64 {
+    if !query_terms.iter().any(|term| query.contains(term)) {
+        return 0.0;
+    }
+    let text_match = text_terms.iter().any(|term| text.contains(term));
+    let room_match = rooms.contains(&room);
+    match (text_match, room_match) {
+        (true, true) => amount,
+        (true, false) => amount * 0.7,
+        (false, true) => amount * 0.45,
+        (false, false) => 0.0,
     }
 }
 

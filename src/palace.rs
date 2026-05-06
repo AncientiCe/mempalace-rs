@@ -119,10 +119,16 @@ impl Palace {
 
     /// Deep L3 semantic search, returning structured results.
     pub fn search(&self, query: &str, n_results: usize) -> Result<Vec<SearchResult>> {
-        let embedding = embed_one(query)?;
+        let sanitized_query = crate::query_sanitizer::sanitize_query(query);
+        let effective_query = if sanitized_query.is_empty() {
+            query
+        } else {
+            &sanitized_query
+        };
+        let embedding = embed_one(effective_query)?;
         let results = crate::ranker::hybrid_search(
             &self.conn,
-            query,
+            effective_query,
             Some(&embedding),
             &DrawerFilter::default(),
             n_results,
@@ -138,13 +144,24 @@ impl Palace {
         room: Option<&str>,
         n_results: usize,
     ) -> Result<Vec<SearchResult>> {
-        let embedding = embed_one(query)?;
+        let sanitized_query = crate::query_sanitizer::sanitize_query(query);
+        let effective_query = if sanitized_query.is_empty() {
+            query
+        } else {
+            &sanitized_query
+        };
+        let embedding = embed_one(effective_query)?;
         let filter = DrawerFilter {
             wing: wing.map(String::from),
             room: room.map(String::from),
         };
-        let results =
-            crate::ranker::hybrid_search(&self.conn, query, Some(&embedding), &filter, n_results)?;
+        let results = crate::ranker::hybrid_search(
+            &self.conn,
+            effective_query,
+            Some(&embedding),
+            &filter,
+            n_results,
+        )?;
         Ok(results.into_iter().map(|result| result.drawer).collect())
     }
 
@@ -236,7 +253,7 @@ impl Palace {
             &mem.memory_type,
             &mem.content,
             Some(&embedding),
-            "extracted",
+            "voice_turn",
             mem.chunk_index,
             &self.ingest_label,
             DEFAULT_IMPORTANCE + 1.0,

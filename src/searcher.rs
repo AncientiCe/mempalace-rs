@@ -5,7 +5,7 @@
 
 use crate::embedder::embed_one;
 use crate::ranker::hybrid_search;
-use crate::store::DrawerFilter;
+use crate::store::{source_context, DrawerFilter};
 use anyhow::Result;
 use rusqlite::Connection;
 
@@ -17,12 +17,18 @@ pub fn search_and_print(
     room: Option<&str>,
     n_results: usize,
 ) -> Result<()> {
-    let embedding = embed_one(query)?;
+    let sanitized_query = crate::query_sanitizer::sanitize_query(query);
+    let effective_query = if sanitized_query.is_empty() {
+        query
+    } else {
+        &sanitized_query
+    };
+    let embedding = embed_one(effective_query)?;
     let filter = DrawerFilter {
         wing: wing.map(String::from),
         room: room.map(String::from),
     };
-    let results = hybrid_search(conn, query, Some(&embedding), &filter, n_results)?;
+    let results = hybrid_search(conn, effective_query, Some(&embedding), &filter, n_results)?;
 
     println!("\n{}", "=".repeat(60));
     println!("  Results for: \"{query}\"");
@@ -68,7 +74,13 @@ pub fn search_memories(
     room: Option<&str>,
     n_results: usize,
 ) -> serde_json::Value {
-    let embedding = match embed_one(query) {
+    let sanitized_query = crate::query_sanitizer::sanitize_query(query);
+    let effective_query = if sanitized_query.is_empty() {
+        query
+    } else {
+        &sanitized_query
+    };
+    let embedding = match embed_one(effective_query) {
         Ok(e) => e,
         Err(e) => {
             return serde_json::json!({
@@ -83,7 +95,7 @@ pub fn search_memories(
         room: room.map(String::from),
     };
 
-    let results = match hybrid_search(conn, query, Some(&embedding), &filter, n_results) {
+    let results = match hybrid_search(conn, effective_query, Some(&embedding), &filter, n_results) {
         Ok(r) => r,
         Err(e) => {
             return serde_json::json!({
@@ -95,21 +107,53 @@ pub fn search_memories(
     let hits: Vec<serde_json::Value> = results
         .iter()
         .map(|r| {
+            let source_context = crate::store::get_drawer(conn, &r.drawer.id)
+                .ok()
+                .flatten()
+                .and_then(|drawer| {
+                    source_context(conn, &drawer.source_file, drawer.chunk_index, 1).ok()
+                })
+                .unwrap_or_default()
+                .into_iter()
+                .map(|drawer| {
+                    serde_json::json!({
+                        "id": drawer.id,
+                        "text": drawer.content,
+                        "wing": drawer.wing,
+                        "room": drawer.room,
+                        "source_file": drawer.source_file,
+                        "chunk_index": drawer.chunk_index,
+                        "created_at": drawer.created_at,
+                        "filed_at": drawer.filed_at,
+                    })
+                })
+                .collect::<Vec<_>>();
+            let filed_at = crate::store::get_drawer(conn, &r.drawer.id)
+                .ok()
+                .flatten()
+                .map(|drawer| drawer.filed_at)
+                .unwrap_or_default();
             serde_json::json!({
+                "id": r.drawer.id,
                 "text": r.drawer.text,
                 "wing": r.drawer.wing,
                 "room": r.drawer.room,
                 "source_file": r.drawer.source_file,
                 "created_at": r.drawer.created_at,
+                "filed_at": filed_at,
                 "similarity": r.combined,
+                "combined": r.combined,
                 "cosine": r.cosine,
                 "bm25": r.bm25,
+                "coding_boost": r.coding_boost,
+                "source_context": source_context,
             })
         })
         .collect();
 
     serde_json::json!({
         "query": query,
+        "sanitized_query": effective_query,
         "filters": {
             "wing": wing,
             "room": room,

@@ -4,17 +4,20 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust 1.82+](https://img.shields.io/badge/rust-1.82%2B-orange.svg)](https://www.rust-lang.org)
 
-A local memory palace for AI assistants, implemented in Rust.
+A local-first memory retrieval engine for coding agents, implemented in Rust.
 
-This project stores verbatim text, embeds it locally, and retrieves relevant
-drawers with semantic search. It can be used as a CLI, an MCP stdio server, or
-as a Rust library through the `Palace` facade.
+This project stores verbatim project and conversation memory, embeds it locally,
+and retrieves source-grounded context through MCP. It is built for coding agents
+that need to remember decisions, prior fixes, commands, project conventions, and
+user preferences across sessions without running a separate vector database.
 
 ## What It Does
 
 - Stores project files and conversation turns in a local SQLite database.
 - Generates local embeddings with ONNX Runtime and `all-MiniLM-L6-v2`.
-- Retrieves memories by semantic similarity with optional wing/room filters.
+- Retrieves memories with hybrid semantic/BM25 search plus coding-agent intent boosts.
+- Sanitizes agent-generated query dumps before retrieval.
+- Returns source-grounded results with score provenance and nearby source context.
 - Provides a knowledge graph for temporal entity relationships.
 - Exposes MCP tools for assistants that support Model Context Protocol.
 - Offers a small Rust library API for embedding memory into other services.
@@ -35,6 +38,31 @@ Embeddings are stored as `f32` vectors from `all-MiniLM-L6-v2`. Search uses loca
 
 ## Benchmarks
 
+### Coding-Agent Memory Eval
+
+The repository includes a focused eval fixture for practical coding-agent memory
+questions. It stores realistic memories about project decisions, prior failures,
+commands, conventions, user preferences, and current direction, then asks 40
+questions such as:
+
+- why did we choose bundled sqlite?
+- how did we fix the migration test failure last time?
+- what clippy command should I run?
+- what is the project convention for search results?
+- what changed in the current product direction?
+
+Run it with:
+
+```bash
+cargo test --test coding_agent_eval -- --nocapture
+```
+
+The test reports `recall@1` and `recall@5` and fails if retrieval drops below the
+stable threshold. This is the product-shaped proof: not broad memory theater,
+but whether a coding agent can recover the right project context when it matters.
+
+### LongMemEval
+
 Retrieval recall on the LongMemEval `s_cleaned` split — 500 questions over conversational haystacks of ~50 sessions / ~115k tokens each (30 abstention questions are filtered out per the standard convention, leaving 470 evaluated).
 
 The recipe behind the numbers below:
@@ -42,7 +70,7 @@ The recipe behind the numbers below:
 - **Granularity**: one drawer per session.
 - **Indexed content**: the **full session** — both user and assistant turns are stored and embedded together. No user-turn filtering, no summarization, no LLM extraction.
 - **Embedder**: `all-MiniLM-L6-v2` (384-dim, ONNX), 512-token cap, run locally — no API calls.
-- **Retrieval**: **hybrid** — BM25 (k1=1.5, b=0.75, weight 0.35) fused with cosine similarity (weight 0.65), top-K = 10. Pure score fusion, no hand-tuned keyword/temporal/preference boosters.
+- **Retrieval**: **hybrid baseline** — BM25 (k1=1.5, b=0.75, weight 0.35) fused with cosine similarity (weight 0.65), top-K = 10. These reported LongMemEval numbers used pure score fusion, before the coding-agent intent boosts used by current project-memory search.
 - **No LLM at any stage**: no extraction, no rerank, no answer generation. The recall numbers measure the retriever in isolation.
 - **Metric**: `recall_any@K` at session granularity — does any gold session appear in the top-K results?
 - **Hardware**: Apple M1 Pro, 10 cores (8P + 2E), 32 GB RAM.
@@ -72,7 +100,7 @@ Per-question-type on `s_cleaned`:
   - `single-session-assistant`, `single-session-user`, `knowledge-update`: ≥0.94 at R@1, ≈1.0 at R@5. The retriever handles direct questions where the answer is stated verbatim in one session.
   - `multi-session` and `temporal-reasoning`: strong at R@5 (~0.98) but lower at R@1 (~0.83–0.91). Multiple sessions are relevant and the "best" one is a judgement call — top-1 ranking among near-equivalents is genuinely ambiguous.
   - `single-session-preference`: the visible weak spot at 0.633 / 0.867 / 0.933. Preference questions ("what's my favorite X") are answered by sentences like *"I like…"* / *"I prefer…"* that don't share keywords with the question. Pure BM25 + frozen MiniLM has no signal for preference-shaped sentences specifically; closing this gap would require either an LLM-extracted preference index or a hand-rolled pattern booster.
-- **What's deliberately *not* in these numbers.** No LLM at any stage — no extraction during ingest, no query rewriting, no rerank, no answer generation. No per-dataset hyperparameter tuning. No keyword/temporal/preference boosters. No GPU. The result is the retrieval engine in isolation, on a single CPU, with fixed defaults.
+- **What's deliberately *not* in these LongMemEval numbers.** No LLM at any stage — no extraction during ingest, no query rewriting, no rerank, no answer generation. No per-dataset hyperparameter tuning. No GPU. The result is the baseline retriever in isolation, on a single CPU, with fixed defaults.
 
 ---
 
