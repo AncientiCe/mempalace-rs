@@ -251,6 +251,31 @@ fn uninstall_removes_managed_block_only() {
     assert!(!rule.contains("<!-- BEGIN MEMPALACE -->"));
 }
 
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[test]
+fn install_all_skips_claude_desktop_on_unsupported_platform() {
+    let temp = TempDir::new().unwrap();
+    let binary_path = fake_binary(temp.path());
+    // Must not error on platforms where Claude Desktop is not supported
+    let report = install_clients(&without_rule(options(
+        temp.path(),
+        &binary_path,
+        vec![Client::All],
+    )))
+    .unwrap();
+    let paths: Vec<_> = report
+        .changed
+        .iter()
+        .chain(report.unchanged.iter())
+        .collect();
+    assert!(
+        paths
+            .iter()
+            .all(|p| !p.to_string_lossy().contains("claude_desktop")),
+        "claude_desktop_config.json should not appear on this platform"
+    );
+}
+
 #[test]
 fn install_claude_writes_to_dot_claude_json_not_subdirectory() {
     let temp = TempDir::new().unwrap();
