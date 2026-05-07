@@ -252,6 +252,164 @@ fn uninstall_removes_managed_block_only() {
 }
 
 #[test]
+fn install_claude_writes_to_dot_claude_json_not_subdirectory() {
+    let temp = TempDir::new().unwrap();
+    let binary_path = fake_binary(temp.path());
+    let report =
+        install_clients(&options(temp.path(), &binary_path, vec![Client::Claude])).unwrap();
+
+    assert_eq!(report.changed.len(), 1);
+    // Must be ~/.claude.json (top-level), not ~/.claude/mcp_servers.json
+    assert!(report.changed[0].ends_with(".claude.json"));
+    assert!(!report.changed[0]
+        .to_string_lossy()
+        .contains("mcp_servers.json"));
+
+    let config = read_json(&temp.path().join(".claude.json"));
+    let server = &config["mcpServers"]["mempalace"];
+    assert_eq!(
+        server["command"].as_str(),
+        Some(binary_path.to_string_lossy().as_ref())
+    );
+    assert_eq!(server["args"], serde_json::json!(["mcp"]));
+}
+
+#[test]
+fn install_claude_inserts_rule_block_into_claude_md() {
+    let temp = TempDir::new().unwrap();
+    let binary_path = fake_binary(temp.path());
+    install_clients(&options(temp.path(), &binary_path, vec![Client::Claude])).unwrap();
+
+    let rule = fs::read_to_string(temp.path().join(".claude/CLAUDE.md")).unwrap();
+    assert!(rule.contains("<!-- BEGIN MEMPALACE -->"));
+    assert!(rule.contains("mempalace_status"));
+    assert!(rule.contains("<!-- END MEMPALACE -->"));
+}
+
+#[test]
+fn uninstall_claude_removes_entry_from_dot_claude_json() {
+    let temp = TempDir::new().unwrap();
+    let binary_path = fake_binary(temp.path());
+    let install_options = options(temp.path(), &binary_path, vec![Client::Claude]);
+    install_clients(&install_options).unwrap();
+    let report = uninstall_clients(&without_rule(install_options)).unwrap();
+
+    assert_eq!(report.changed.len(), 1);
+    let config = read_json(&temp.path().join(".claude.json"));
+    assert!(config["mcpServers"]["mempalace"].is_null());
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_claude_desktop_writes_to_library_application_support() {
+    let temp = TempDir::new().unwrap();
+    let binary_path = fake_binary(temp.path());
+    let report = install_clients(&options(
+        temp.path(),
+        &binary_path,
+        vec![Client::ClaudeDesktop],
+    ))
+    .unwrap();
+
+    assert_eq!(report.changed.len(), 1);
+    let expected = temp
+        .path()
+        .join("Library/Application Support/Claude/claude_desktop_config.json");
+    assert_eq!(report.changed[0], expected);
+
+    let config = read_json(&expected);
+    let server = &config["mcpServers"]["mempalace"];
+    assert_eq!(
+        server["command"].as_str(),
+        Some(binary_path.to_string_lossy().as_ref())
+    );
+    assert_eq!(server["args"], serde_json::json!(["mcp"]));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_claude_desktop_preserves_existing_keys() {
+    let temp = TempDir::new().unwrap();
+    let desktop_dir = temp.path().join("Library/Application Support/Claude");
+    fs::create_dir_all(&desktop_dir).unwrap();
+    fs::write(
+        desktop_dir.join("claude_desktop_config.json"),
+        r#"{"preferences":{"theme":"dark"}}"#,
+    )
+    .unwrap();
+
+    let binary_path = fake_binary(temp.path());
+    install_clients(&options(
+        temp.path(),
+        &binary_path,
+        vec![Client::ClaudeDesktop],
+    ))
+    .unwrap();
+
+    let config = read_json(&desktop_dir.join("claude_desktop_config.json"));
+    assert_eq!(config["preferences"]["theme"], "dark");
+    assert_eq!(
+        config["mcpServers"]["mempalace"]["command"].as_str(),
+        Some(binary_path.to_string_lossy().as_ref())
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn uninstall_claude_desktop_removes_only_mempalace() {
+    let temp = TempDir::new().unwrap();
+    let desktop_dir = temp.path().join("Library/Application Support/Claude");
+    fs::create_dir_all(&desktop_dir).unwrap();
+    fs::write(
+        desktop_dir.join("claude_desktop_config.json"),
+        r#"{"mcpServers":{"mempalace":{"command":"mp","args":["mcp"]},"other":{"command":"other"}}}"#,
+    )
+    .unwrap();
+
+    let binary_path = fake_binary(temp.path());
+    let install_options = without_rule(options(
+        temp.path(),
+        &binary_path,
+        vec![Client::ClaudeDesktop],
+    ));
+    uninstall_clients(&install_options).unwrap();
+
+    let config = read_json(&desktop_dir.join("claude_desktop_config.json"));
+    assert!(config["mcpServers"]["mempalace"].is_null());
+    assert_eq!(config["mcpServers"]["other"]["command"], "other");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn doctor_reports_claude_and_claude_desktop_paths() {
+    let temp = TempDir::new().unwrap();
+    let binary_path = fake_binary(temp.path());
+    let install_options = options(
+        temp.path(),
+        &binary_path,
+        vec![Client::Claude, Client::ClaudeDesktop],
+    );
+
+    let before = doctor(&install_options).unwrap();
+    assert!(before
+        .clients
+        .iter()
+        .any(|s| s.client == Client::Claude && !s.configured && s.path.ends_with(".claude.json")));
+    assert!(before.clients.iter().any(|s| {
+        s.client == Client::ClaudeDesktop
+            && !s.configured
+            && s.path.ends_with("claude_desktop_config.json")
+    }));
+
+    install_clients(&install_options).unwrap();
+    let after = doctor(&install_options).unwrap();
+    assert!(after
+        .clients
+        .iter()
+        .all(|s| s.configured && s.points_to_expected_binary));
+}
+
+#[test]
 fn doctor_reports_status_correctly() {
     let temp = TempDir::new().unwrap();
     let binary_path = fake_binary(temp.path());

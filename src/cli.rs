@@ -168,7 +168,7 @@ enum Commands {
     },
     /// Register the MCP server with local AI clients
     Install {
-        /// Client to configure: cursor, codex, claude, or all
+        /// Client to configure: cursor, codex, claude, claude-desktop, or all
         #[arg(long, default_value = "all")]
         client: String,
         /// Configure all supported clients
@@ -192,7 +192,7 @@ enum Commands {
     },
     /// Remove the MemPalace MCP server from local AI clients
     Uninstall {
-        /// Client to configure: cursor, codex, claude, or all
+        /// Client to configure: cursor, codex, claude, claude-desktop, or all
         #[arg(long, default_value = "all")]
         client: String,
         /// Remove all supported clients
@@ -213,7 +213,7 @@ enum Commands {
     },
     /// Show MCP client configuration and palace status
     Doctor {
-        /// Client to inspect: cursor, codex, claude, or all
+        /// Client to inspect: cursor, codex, claude, claude-desktop, or all
         #[arg(long, default_value = "all")]
         client: String,
         /// Inspect all supported clients
@@ -497,7 +497,7 @@ pub fn run() -> Result<()> {
             let action = if dry_run { "would update" } else { "updated" };
             crate::install::print_install_report(action, &report);
             if !dry_run {
-                println!("  Restart Cursor, Codex, or Claude Code to load the MCP server.");
+                println!("  Restart Cursor, Codex, Claude Code, or Claude Desktop to load the MCP server.");
             }
         }
 

@@ -16,6 +16,7 @@ pub enum Client {
     Cursor,
     Codex,
     Claude,
+    ClaudeDesktop,
     All,
 }
 
@@ -71,6 +72,7 @@ impl fmt::Display for Client {
             Client::Cursor => f.write_str("cursor"),
             Client::Codex => f.write_str("codex"),
             Client::Claude => f.write_str("claude"),
+            Client::ClaudeDesktop => f.write_str("claude-desktop"),
             Client::All => f.write_str("all"),
         }
     }
@@ -84,6 +86,7 @@ impl std::str::FromStr for Client {
             "cursor" => Ok(Client::Cursor),
             "codex" => Ok(Client::Codex),
             "claude" | "claude-code" => Ok(Client::Claude),
+            "claude-desktop" => Ok(Client::ClaudeDesktop),
             "all" => Ok(Client::All),
             other => Err(anyhow!("unknown MCP client: {other}")),
         }
@@ -135,7 +138,7 @@ pub fn install_clients(options: &InstallOptions) -> Result<InstallReport> {
     for client in expand_clients(&options.clients) {
         let path = config_path(options, client)?;
         let changed = match client {
-            Client::Cursor | Client::Claude => {
+            Client::Cursor | Client::Claude | Client::ClaudeDesktop => {
                 write_json_client(&path, &options.binary_path, options.dry_run)?
             }
             Client::Codex => write_codex_client(&path, &options.binary_path, options.dry_run)?,
@@ -164,7 +167,9 @@ pub fn uninstall_clients(options: &InstallOptions) -> Result<InstallReport> {
     for client in expand_clients(&options.clients) {
         let path = config_path(options, client)?;
         let changed = match client {
-            Client::Cursor | Client::Claude => remove_json_client(&path, options.dry_run)?,
+            Client::Cursor | Client::Claude | Client::ClaudeDesktop => {
+                remove_json_client(&path, options.dry_run)?
+            }
             Client::Codex => remove_codex_client(&path, options.dry_run)?,
             Client::All => false,
         };
@@ -269,7 +274,12 @@ pub fn print_doctor_report(report: &DoctorReport) {
 
 fn expand_clients(clients: &[Client]) -> Vec<Client> {
     if clients.is_empty() || clients.contains(&Client::All) {
-        vec![Client::Cursor, Client::Codex, Client::Claude]
+        vec![
+            Client::Cursor,
+            Client::Codex,
+            Client::Claude,
+            Client::ClaudeDesktop,
+        ]
     } else {
         clients
             .iter()
@@ -291,8 +301,29 @@ fn config_path(options: &InstallOptions, client: Client) -> Result<PathBuf> {
             }
         },
         Client::Codex => Ok(options.home_dir.join(".codex").join("config.toml")),
-        Client::Claude => Ok(options.home_dir.join(".claude").join("mcp_servers.json")),
+        // Claude Code CLI reads from ~/.claude.json (top-level file, not ~/.claude/ directory)
+        Client::Claude => Ok(options.home_dir.join(".claude.json")),
+        Client::ClaudeDesktop => claude_desktop_config_path(&options.home_dir),
         Client::All => Err(anyhow!("all is not a concrete client")),
+    }
+}
+
+fn claude_desktop_config_path(home_dir: &Path) -> Result<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        Ok(home_dir.join("Library/Application Support/Claude/claude_desktop_config.json"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = std::env::var_os("APPDATA").ok_or_else(|| anyhow!("APPDATA not set"))?;
+        Ok(PathBuf::from(appdata)
+            .join("Claude")
+            .join("claude_desktop_config.json"))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = home_dir;
+        Err(anyhow!("claude-desktop is not supported on this platform"))
     }
 }
 
@@ -322,11 +353,13 @@ fn rule_target(options: &InstallOptions, client: Client) -> Result<RuleTarget> {
         (Client::Codex, Scope::Project) => project_dir()?.join("AGENTS.md"),
         (Client::Claude, Scope::User) => options.home_dir.join(".claude/CLAUDE.md"),
         (Client::Claude, Scope::Project) => project_dir()?.join("CLAUDE.md"),
+        // Claude Desktop has no rules/prompts file to inject into
+        (Client::ClaudeDesktop, _) => options.home_dir.join(".claude/CLAUDE.md"),
         (Client::All, _) => return Err(anyhow!("all is not a concrete client")),
     };
     let kind = match client {
         Client::Cursor => RuleKind::Standalone,
-        Client::Codex | Client::Claude => RuleKind::ManagedBlock,
+        Client::Codex | Client::Claude | Client::ClaudeDesktop => RuleKind::ManagedBlock,
         Client::All => return Err(anyhow!("all is not a concrete client")),
     };
     Ok(RuleTarget { path, kind })
@@ -633,7 +666,7 @@ fn backup_existing(path: &Path) -> Result<()> {
 
 fn read_configured_command(client: Client, path: &Path) -> Result<Option<String>> {
     match client {
-        Client::Cursor | Client::Claude => {
+        Client::Cursor | Client::Claude | Client::ClaudeDesktop => {
             if !path.exists() {
                 return Ok(None);
             }
