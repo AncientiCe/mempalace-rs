@@ -274,11 +274,15 @@ pub fn print_doctor_report(report: &DoctorReport) {
 
 fn expand_clients(clients: &[Client]) -> Vec<Client> {
     if clients.is_empty() || clients.contains(&Client::All) {
-        let mut all = vec![Client::Cursor, Client::Codex, Client::Claude];
-        // Claude Desktop is only available on macOS and Windows
         #[cfg(any(target_os = "macos", target_os = "windows"))]
-        all.push(Client::ClaudeDesktop);
-        all
+        return vec![
+            Client::Cursor,
+            Client::Codex,
+            Client::Claude,
+            Client::ClaudeDesktop,
+        ];
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        return vec![Client::Cursor, Client::Codex, Client::Claude];
     } else {
         clients
             .iter()
