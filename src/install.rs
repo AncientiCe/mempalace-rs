@@ -311,10 +311,10 @@ fn config_path(options: &InstallOptions, client: Client) -> Result<PathBuf> {
     }
 }
 
-fn claude_desktop_config_path(home_dir: &Path) -> Result<PathBuf> {
+fn claude_desktop_config_path(_home_dir: &Path) -> Result<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        Ok(home_dir.join("Library/Application Support/Claude/claude_desktop_config.json"))
+        Ok(_home_dir.join("Library/Application Support/Claude/claude_desktop_config.json"))
     }
     #[cfg(target_os = "windows")]
     {
@@ -325,7 +325,6 @@ fn claude_desktop_config_path(home_dir: &Path) -> Result<PathBuf> {
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = home_dir;
         Err(anyhow!("claude-desktop is not supported on this platform"))
     }
 }

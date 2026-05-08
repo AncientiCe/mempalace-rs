@@ -27,18 +27,22 @@ const DOCS: &[EvalDoc] = &[
     EvalDoc { id: "commands/clippy.md", room: "commands", text: "Run cargo clippy --all-targets --all-features -- -D warnings to catch warnings as errors." },
     EvalDoc { id: "commands/test.md", room: "commands", text: "Run cargo test --all-features for the full Rust test suite before marking a task complete." },
     EvalDoc { id: "commands/audit.md", room: "commands", text: "Run cargo audit to check dependency advisories as part of the release gate." },
-    EvalDoc { id: "conventions/tdd.md", room: "conventions", text: "Project convention: write behavioral tests first, see them fail, implement, then make them pass." },
+    EvalDoc { id: "conventions/tdd.md", room: "conventions", text: "TDD convention: write behavioral tests first, see them fail, implement, then make them pass." },
     EvalDoc { id: "conventions/api.md", room: "conventions", text: "Project convention: avoid breaking public library APIs and route ergonomic use through the Palace facade." },
     EvalDoc { id: "conventions/source.md", room: "conventions", text: "Project convention: search results must include provenance so agents can cite wing, room, source, and score details." },
     EvalDoc { id: "conventions/no_cli_sprawl.md", room: "conventions", text: "Project convention: avoid new CLI commands unless they directly prove coding-agent retrieval value." },
-    EvalDoc { id: "preferences/focus.md", room: "preferences", text: "The user prefers narrow coding-agent memory value over broad personal-memory features or celebrity-driven storytelling." },
+    EvalDoc { id: "preferences/focus.md", room: "preferences", text: "The user prefers narrow coding-agent memory value instead of broad memory features, broad personal-memory features, or celebrity-driven storytelling." },
     EvalDoc { id: "preferences/cli.md", room: "preferences", text: "The user does not want more CLI commands when the MCP path already works perfectly for coding agents." },
     EvalDoc { id: "preferences/proof.md", room: "preferences", text: "The user prefers proof from practical evaluations over vague visibility work or generic adoption advice." },
     EvalDoc { id: "preferences/rust.md", room: "preferences", text: "The user values the Rust version as a dependable single-binary memory engine with one SQLite file." },
+    EvalDoc { id: "preferences/public_api.md", room: "preferences", text: "I prefer small public APIs that route through the Palace facade instead of exposing internal modules." },
+    EvalDoc { id: "preferences/retrieval.md", room: "preferences", text: "My style is to keep retrieval source-grounded with score provenance rather than returning opaque snippets." },
     EvalDoc { id: "current/positioning.md", room: "current", text: "Current direction changed from broad MemPalace parity to a narrow local-first memory retrieval engine for coding agents." },
     EvalDoc { id: "current/benchmark.md", room: "current", text: "Current proof priority is a coding-agent eval suite with recall at one and recall at five over realistic project-memory questions." },
     EvalDoc { id: "current/readme.md", room: "current", text: "Current README positioning should lead with local-first memory retrieval for coding agents, not a wide personal-memory universe." },
     EvalDoc { id: "current/trust.md", room: "current", text: "Current trust model keeps verbatim drawers as source of truth and treats extracted memories as indexes or pointers." },
+    EvalDoc { id: "current/session_context.md", room: "current", text: "Current session continuity comes from recent diary entries with project path, topic, timestamp, compact text, and tags." },
+    EvalDoc { id: "current/release_theme.md", room: "current", text: "Current release theme for version 0.1.9 is agent memory reliability, especially preference recall and warm-start context." },
 ];
 
 const QUESTIONS: &[EvalQuestion] = &[
@@ -143,6 +147,16 @@ const QUESTIONS: &[EvalQuestion] = &[
         category: "preference",
     },
     EvalQuestion {
+        query: "how should I shape the public interface?",
+        gold_source: "preferences/public_api.md",
+        category: "preference",
+    },
+    EvalQuestion {
+        query: "how should retrieval results explain themselves?",
+        gold_source: "preferences/retrieval.md",
+        category: "preference",
+    },
+    EvalQuestion {
         query: "what changed in the current product direction?",
         gold_source: "current/positioning.md",
         category: "temporal",
@@ -160,6 +174,16 @@ const QUESTIONS: &[EvalQuestion] = &[
     EvalQuestion {
         query: "what is the current trust model?",
         gold_source: "current/trust.md",
+        category: "temporal",
+    },
+    EvalQuestion {
+        query: "what should agents use for session continuity?",
+        gold_source: "current/session_context.md",
+        category: "session",
+    },
+    EvalQuestion {
+        query: "what is the 0.1.9 release theme?",
+        gold_source: "current/release_theme.md",
         category: "temporal",
     },
     EvalQuestion {
@@ -231,6 +255,16 @@ const QUESTIONS: &[EvalQuestion] = &[
         query: "what does the user prefer over visibility advice?",
         gold_source: "preferences/proof.md",
         category: "preference",
+    },
+    EvalQuestion {
+        query: "what interface style does the user prefer?",
+        gold_source: "preferences/public_api.md",
+        category: "preference",
+    },
+    EvalQuestion {
+        query: "what warm-start context should diary entries provide?",
+        gold_source: "current/session_context.md",
+        category: "session",
     },
     EvalQuestion {
         query: "what command checks advisories?",

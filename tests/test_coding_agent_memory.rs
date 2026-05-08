@@ -1,9 +1,10 @@
 use mempalace::db;
 use mempalace::general_extractor::extract_memories;
+use mempalace::mcp_server::dispatch_tool;
 use mempalace::palace::Palace;
 use mempalace::ranker::hybrid_search;
 use mempalace::searcher::search_memories;
-use mempalace::store::{add_drawer, DrawerFilter};
+use mempalace::store::{add_drawer, preference_search_filtered, DrawerFilter};
 
 fn test_db() -> rusqlite::Connection {
     db::open_in_memory().expect("in-memory DB should open")
@@ -205,4 +206,119 @@ fn palace_extracted_memories_point_back_to_voice_turn_source() {
         .expect("extracted decision should exist");
 
     assert_eq!(source_file, "voice_turn");
+}
+
+#[test]
+fn preference_recall_respects_search_filters() {
+    let conn = test_db();
+    let query_vec: Vec<f32> = (0..384).map(|i| (i as f32).sin()).collect();
+    let other_vec: Vec<f32> = (0..384).map(|i| (i as f32).cos()).collect();
+    add_drawer(
+        &conn,
+        "target_wing",
+        "preferences",
+        "I prefer small public APIs for embedded Rust callers.",
+        Some(&query_vec),
+        "target.md",
+        0,
+        "test",
+        3.0,
+    )
+    .expect("target preference should insert");
+    add_drawer(
+        &conn,
+        "other_wing",
+        "preferences",
+        "I prefer unrelated dashboard experiments.",
+        Some(&other_vec),
+        "other.md",
+        0,
+        "test",
+        3.0,
+    )
+    .expect("other preference should insert");
+
+    let filter = DrawerFilter {
+        wing: Some("target_wing".to_string()),
+        room: Some("preferences".to_string()),
+    };
+    let results =
+        preference_search_filtered(&conn, &query_vec, &filter, 10).expect("search should work");
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].source_file, "target.md");
+}
+
+#[test]
+fn palace_structured_search_exposes_score_provenance() {
+    let palace = Palace::open_in_memory().expect("palace should open");
+    add_drawer(
+        palace.conn(),
+        "mempalace_rs",
+        "decisions",
+        "We chose bundled SQLite because coding agents should not need Chroma.",
+        None,
+        "sqlite.md",
+        0,
+        "test",
+        3.0,
+    )
+    .expect("drawer should insert");
+
+    let results = palace
+        .search_with_provenance("why did we choose bundled sqlite?", None, None, 3)
+        .expect("structured search should work");
+
+    let first = results.first().expect("expected a search result");
+    assert_eq!(first.drawer.source_file, "sqlite.md");
+    assert!(first.combined > 0.0);
+    assert!(first.bm25 > 0.0);
+    assert_eq!(
+        first.drawer.similarity,
+        (first.combined * 1000.0).round() / 1000.0
+    );
+}
+
+#[test]
+fn session_context_returns_recent_diary_metadata_and_compact_text() {
+    let conn = test_db();
+    let config = mempalace::config::MempalaceConfig::new();
+    let write = dispatch_tool(
+        &conn,
+        &config,
+        "mempalace_diary_write",
+        &serde_json::json!({
+            "agent_name": "Codex",
+            "entry": "PROJ:mempalace_rs | Implemented preference recall reliability.",
+            "topic": "release",
+            "session_id": "session-123",
+            "project_path": "D:\\Dev\\Projects\\mempalace-rs",
+            "tags": ["0.1.9", "reliability"]
+        }),
+    );
+    assert_eq!(write["success"], true);
+
+    let context = dispatch_tool(
+        &conn,
+        &config,
+        "mempalace_session_context",
+        &serde_json::json!({
+            "agent_name": "Codex"
+        }),
+    );
+
+    assert_eq!(context["has_recent_session"], true);
+    assert_eq!(
+        context["last_active_project"],
+        "D:\\Dev\\Projects\\mempalace-rs"
+    );
+    let entries = context["recent_entries"]
+        .as_array()
+        .expect("recent_entries should be an array");
+    let first = entries.first().expect("expected recent diary entry");
+    assert_eq!(first["topic"], "release");
+    assert_eq!(first["session_id"], "session-123");
+    assert_eq!(first["project_path"], "D:\\Dev\\Projects\\mempalace-rs");
+    assert!(first["timestamp"].is_string());
+    assert!(first["text"].as_str().expect("compact text").len() <= 240);
 }

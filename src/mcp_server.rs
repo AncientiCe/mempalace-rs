@@ -240,7 +240,9 @@ fn tool_status(conn: &Connection, config: &MempalaceConfig) -> Value {
                 "agent": d.metadata.get("agent").and_then(|v| v.as_str()).unwrap_or(""),
                 "topic": d.metadata.get("topic").and_then(|v| v.as_str()).unwrap_or("general"),
                 "timestamp": d.filed_at,
-                "content": &d.content[..200.min(d.content.len())],
+                "session_id": d.metadata.get("session_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "project_path": d.metadata.get("project_path").and_then(|v| v.as_str()).unwrap_or(""),
+                "text": compact_text(&d.content, 200),
             })
         })
         .collect();
@@ -865,7 +867,7 @@ fn tool_session_context(conn: &Connection, args: &Value) -> Value {
                 .unwrap_or("")
                 .to_string();
 
-            let summary: Vec<String> = recent
+            let entries: Vec<Value> = recent
                 .iter()
                 .map(|d| {
                     let topic = d
@@ -873,15 +875,46 @@ fn tool_session_context(conn: &Connection, args: &Value) -> Value {
                         .get("topic")
                         .and_then(|v| v.as_str())
                         .unwrap_or("general");
-                    format!("[{}] {}", topic, &d.content[..200.min(d.content.len())])
+                    let session_id = d
+                        .metadata
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let project_path = d
+                        .metadata
+                        .get("project_path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let tags = d.metadata.get("tags").cloned().unwrap_or_else(|| json!([]));
+                    json!({
+                        "topic": topic,
+                        "timestamp": d.filed_at,
+                        "session_id": session_id,
+                        "project_path": project_path,
+                        "tags": tags,
+                        "text": compact_text(&d.content, 240),
+                    })
                 })
                 .collect();
+            let summary = entries
+                .iter()
+                .map(|entry| {
+                    format!(
+                        "[{}] {}",
+                        entry
+                            .get("topic")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("general"),
+                        entry.get("text").and_then(|v| v.as_str()).unwrap_or("")
+                    )
+                })
+                .collect::<Vec<_>>();
 
             json!({
                 "agent": agent_name,
                 "has_recent_session": true,
                 "last_active_project": project,
-                "recent_entries": summary,
+                "recent_entries": entries,
                 "context": format!(
                     "Last session ({}): {}",
                     recent.first().map(|d| d.filed_at.as_str()).unwrap_or("unknown"),
@@ -1260,4 +1293,8 @@ fn float_arg(args: &Value, key: &str) -> Option<f64> {
             None
         }
     })
+}
+
+fn compact_text(text: &str, max_chars: usize) -> String {
+    text.chars().take(max_chars).collect()
 }

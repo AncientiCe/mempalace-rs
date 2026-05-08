@@ -5,7 +5,7 @@
 
 use crate::embedder::embed_one;
 use crate::ranker::{hybrid_search, HybridResult};
-use crate::store::{preference_search, source_context, DrawerFilter, SearchResult};
+use crate::store::{preference_search_filtered, source_context, DrawerFilter, SearchResult};
 use anyhow::Result;
 use rusqlite::Connection;
 
@@ -107,7 +107,7 @@ pub fn search_memories(
 
     // Merge dedicated preference recall pass — surfaces preference drawers even
     // when BM25 has no keyword overlap (the known R@1 weakness).
-    merge_preference_results(conn, &embedding, &mut results, n_results);
+    merge_preference_results(conn, &embedding, &filter, &mut results, n_results);
 
     let hits: Vec<serde_json::Value> = results
         .iter()
@@ -175,10 +175,11 @@ pub fn search_memories(
 fn merge_preference_results(
     conn: &Connection,
     query_vec: &[f32],
+    filter: &DrawerFilter,
     results: &mut Vec<HybridResult>,
     n_results: usize,
 ) {
-    let pref_candidates = match preference_search(conn, query_vec, 10) {
+    let pref_candidates = match preference_search_filtered(conn, query_vec, filter, 10) {
         Ok(v) => v,
         Err(_) => return,
     };

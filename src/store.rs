@@ -78,11 +78,8 @@ pub fn add_drawer(
     let entity_metadata_text =
         serde_json::to_string(&entity_metadata).unwrap_or_else(|_| "{}".to_string());
     let hall = crate::hall_router::detect_hall(content);
-    let metadata_text = if crate::preference::is_preference(content) {
-        r#"{"preference":true}"#.to_string()
-    } else {
-        "{}".to_string()
-    };
+    let metadata_text = serde_json::to_string(&metadata_for_content(None, content))
+        .unwrap_or_else(|_| "{}".to_string());
 
     let rows = conn
         .execute(
@@ -129,7 +126,7 @@ pub fn add_drawer_with_id(
 ) -> Result<bool> {
     let blob = embedding.map(vec_to_blob);
     let filed_at = Utc::now().to_rfc3339();
-    let metadata = extra_meta.cloned().unwrap_or_else(|| serde_json::json!({}));
+    let metadata = metadata_for_content(extra_meta, content);
     let metadata_text = serde_json::to_string(&metadata).unwrap_or_else(|_| "{}".to_string());
     let hall = metadata
         .get("hall")
@@ -182,12 +179,14 @@ pub fn update_drawer_content(conn: &Connection, id: &str, content: &str) -> Resu
     let hall = crate::hall_router::detect_hall(content);
     let embedding = crate::embedder::embed_one(content).ok();
     let blob = embedding.as_deref().map(vec_to_blob);
-    let preference = crate::preference::is_preference(content);
-    let metadata_text = if preference {
-        r#"{"preference":true}"#.to_string()
-    } else {
-        "{}".to_string()
-    };
+    let current_metadata = get_drawer(conn, id)
+        .ok()
+        .flatten()
+        .map(|drawer| drawer.metadata)
+        .unwrap_or_else(|| serde_json::json!({}));
+    let metadata_text =
+        serde_json::to_string(&metadata_for_content(Some(&current_metadata), content))
+            .unwrap_or_else(|_| "{}".to_string());
     let rows = conn
         .execute(
             "UPDATE drawers
@@ -361,23 +360,43 @@ pub fn preference_search(
     query_vec: &[f32],
     n_results: usize,
 ) -> Result<Vec<SearchResult>> {
-    let mut stmt = conn.prepare(
+    preference_search_filtered(conn, query_vec, &DrawerFilter::default(), n_results)
+}
+
+/// Search preference-tagged drawers with optional wing/room filters.
+pub fn preference_search_filtered(
+    conn: &Connection,
+    query_vec: &[f32],
+    filter: &DrawerFilter,
+    n_results: usize,
+) -> Result<Vec<SearchResult>> {
+    let (where_clause, where_params) = build_where(filter);
+    let extra_filter = if where_clause.is_empty() {
+        String::new()
+    } else {
+        format!(" AND {}", &where_clause[6..])
+    };
+    let sql = format!(
         "SELECT id, wing, room, content, source_file, created_at, embedding
          FROM drawers
          WHERE json_extract(metadata, '$.preference') = 1
-           AND embedding IS NOT NULL",
+           AND embedding IS NOT NULL{extra_filter}",
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(
+        rusqlite::params_from_iter(where_params.iter().map(|p| p.as_ref())),
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, Vec<u8>>(6)?,
+            ))
+        },
     )?;
-    let rows = stmt.query_map([], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, String>(3)?,
-            r.get::<_, String>(4)?,
-            r.get::<_, String>(5)?,
-            r.get::<_, Vec<u8>>(6)?,
-        ))
-    })?;
 
     let mut scored: Vec<SearchResult> = rows
         .filter_map(|r| {
@@ -548,6 +567,19 @@ fn drawer_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Drawer> {
 
 fn parse_json_object(text: &str) -> serde_json::Value {
     serde_json::from_str(text).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+fn metadata_for_content(existing: Option<&serde_json::Value>, content: &str) -> serde_json::Value {
+    let mut metadata = existing.cloned().unwrap_or_else(|| serde_json::json!({}));
+    if !metadata.is_object() {
+        metadata = serde_json::json!({});
+    }
+    if crate::preference::is_preference(content) {
+        metadata["preference"] = serde_json::json!(true);
+    } else if let Some(object) = metadata.as_object_mut() {
+        object.remove("preference");
+    }
+    metadata
 }
 
 fn index_bm25_terms(conn: &Connection, drawer_id: &str, content: &str) -> Result<()> {

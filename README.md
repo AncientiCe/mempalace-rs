@@ -16,11 +16,31 @@ user preferences across sessions without running a separate vector database.
 - Stores project files and conversation turns in a local SQLite database.
 - Generates local embeddings with ONNX Runtime and `all-MiniLM-L6-v2`.
 - Retrieves memories with hybrid semantic/BM25 search plus coding-agent intent boosts.
+- Tags preference-shaped drawers and runs a dedicated preference recall pass for
+  fuzzy "what do I prefer?" and convention questions.
 - Sanitizes agent-generated query dumps before retrieval.
 - Returns source-grounded results with score provenance and nearby source context.
+- Warms up agents from recent diary entries with project, topic, timestamp, tags,
+  and compact session text.
 - Provides a knowledge graph for temporal entity relationships.
 - Exposes MCP tools for assistants that support Model Context Protocol.
 - Offers a small Rust library API for embedding memory into other services.
+
+## Agent Memory Reliability
+
+Version `0.1.9` focuses on the retrieval cases that matter most during coding
+work: preferences, project conventions, recent session continuity, and
+source-grounded answers. Drawers that look like user preferences or conventions
+are tagged in metadata during writes and updates, then considered by a
+filter-aware preference recall pass alongside hybrid semantic/BM25 search.
+
+MCP search responses expose score provenance (`combined`, `cosine`, `bm25`, and
+`coding_boost`) plus adjacent source context so agents can cite why a memory was
+returned. Diary tools provide warm-start context for recent sessions, including
+project path, topic, timestamp, session ID, tags, and compact text.
+
+Library consumers can use `Palace::search_with_provenance` when they need the
+same structured score details that MCP tools return.
 
 ## Storage
 
@@ -368,6 +388,8 @@ graph operations, graph tunnels, hook acknowledgements, and agent diaries:
 | `mempalace_graph_stats` | Palace graph summary |
 | `mempalace_diary_write` | Write a diary entry in AAAK format |
 | `mempalace_diary_read` | Read recent diary entries |
+| `mempalace_diary_search` | Search within an agent's diary entries |
+| `mempalace_session_context` | Get recent diary context for agent warm-start |
 
 ---
 

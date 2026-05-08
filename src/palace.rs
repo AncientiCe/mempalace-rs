@@ -12,7 +12,10 @@ use crate::embedder::embed_one;
 use crate::general_extractor::{extract_memories, Memory};
 use crate::knowledge_graph::{self as kg, KgStats, Triple};
 use crate::layers::{Layer3, MemoryStack};
+use crate::ranker::HybridResult;
 use crate::store::{self, Drawer, DrawerFilter, SearchResult};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 const CONVO_WING: &str = "conversations";
 const CONVO_ROOM: &str = "voice_turns";
@@ -28,6 +31,16 @@ pub struct Palace {
     config: MempalaceConfig,
     stack: MemoryStack,
     ingest_label: String,
+}
+
+/// Structured search result with score provenance for library consumers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PalaceSearchResult {
+    pub drawer: SearchResult,
+    pub cosine: f64,
+    pub bm25: f64,
+    pub coding_boost: f64,
+    pub combined: f64,
 }
 
 impl Palace {
@@ -119,21 +132,8 @@ impl Palace {
 
     /// Deep L3 semantic search, returning structured results.
     pub fn search(&self, query: &str, n_results: usize) -> Result<Vec<SearchResult>> {
-        let sanitized_query = crate::query_sanitizer::sanitize_query(query);
-        let effective_query = if sanitized_query.is_empty() {
-            query
-        } else {
-            &sanitized_query
-        };
-        let embedding = embed_one(effective_query)?;
-        let results = crate::ranker::hybrid_search(
-            &self.conn,
-            effective_query,
-            Some(&embedding),
-            &DrawerFilter::default(),
-            n_results,
-        )?;
-        Ok(results.into_iter().map(|result| result.drawer).collect())
+        self.search_with_provenance(query, None, None, n_results)
+            .map(|results| results.into_iter().map(|result| result.drawer).collect())
     }
 
     /// Filtered semantic search.
@@ -144,6 +144,18 @@ impl Palace {
         room: Option<&str>,
         n_results: usize,
     ) -> Result<Vec<SearchResult>> {
+        self.search_with_provenance(query, wing, room, n_results)
+            .map(|results| results.into_iter().map(|result| result.drawer).collect())
+    }
+
+    /// Filtered semantic search with score provenance.
+    pub fn search_with_provenance(
+        &self,
+        query: &str,
+        wing: Option<&str>,
+        room: Option<&str>,
+        n_results: usize,
+    ) -> Result<Vec<PalaceSearchResult>> {
         let sanitized_query = crate::query_sanitizer::sanitize_query(query);
         let effective_query = if sanitized_query.is_empty() {
             query
@@ -162,7 +174,17 @@ impl Palace {
             &filter,
             n_results,
         )?;
-        Ok(results.into_iter().map(|result| result.drawer).collect())
+        let results = merge_preference_results(&self.conn, &embedding, &filter, results, n_results);
+        Ok(results
+            .into_iter()
+            .map(|result| PalaceSearchResult {
+                drawer: result.drawer,
+                cosine: result.cosine,
+                bm25: result.bm25,
+                coding_boost: result.coding_boost,
+                combined: result.combined,
+            })
+            .collect())
     }
 
     /// Return the best-matching drawer plus adjacent chunks from the same source file.
@@ -315,6 +337,49 @@ impl Palace {
     pub fn conn(&self) -> &Connection {
         &self.conn
     }
+}
+
+fn merge_preference_results(
+    conn: &Connection,
+    query_vec: &[f32],
+    filter: &DrawerFilter,
+    mut results: Vec<HybridResult>,
+    n_results: usize,
+) -> Vec<HybridResult> {
+    let existing_ids: HashSet<String> = results.iter().map(|r| r.drawer.id.clone()).collect();
+    let pref_candidates =
+        match crate::store::preference_search_filtered(conn, query_vec, filter, 10) {
+            Ok(candidates) => candidates,
+            Err(_) => return results,
+        };
+
+    for pref in pref_candidates {
+        if pref.similarity < 0.25 {
+            break;
+        }
+        if existing_ids.contains(&pref.id) {
+            continue;
+        }
+        let combined = pref.similarity * 0.4;
+        results.push(HybridResult {
+            cosine: pref.similarity,
+            bm25: 0.0,
+            coding_boost: 0.0,
+            combined,
+            drawer: SearchResult {
+                similarity: (combined * 1000.0).round() / 1000.0,
+                ..pref
+            },
+        });
+    }
+
+    results.sort_by(|a, b| {
+        b.combined
+            .partial_cmp(&a.combined)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    results.truncate(n_results);
+    results
 }
 
 #[cfg(test)]

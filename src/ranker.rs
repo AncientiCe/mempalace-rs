@@ -202,7 +202,7 @@ fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
             "settled on",
         ],
         &["decision", "decisions"],
-        0.11,
+        0.16,
     );
     boost += intent_boost(
         &query_lower,
@@ -250,7 +250,7 @@ fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
         &["convention", "rule", "usually", "should", "how do we"],
         &["convention", "rule", "always", "never", "should", "must"],
         &["convention", "conventions"],
-        0.11,
+        0.14,
     );
     boost += intent_boost(
         &query_lower,
@@ -262,10 +262,26 @@ fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
             "user want",
             "user like",
             "feel about",
+            "interface style",
+            "public interface",
+            "shape",
+            "retrieval results",
+            "explain themselves",
         ],
-        &["prefer", "preference", "user", "does not want", "values"],
+        &[
+            "prefer",
+            "preference",
+            "user",
+            "does not want",
+            "values",
+            "my style",
+            "source-grounded",
+            "score provenance",
+            "public api",
+            "public apis",
+        ],
         &["preference", "preferences"],
-        0.12,
+        0.15,
     );
 
     // Extra boost for preference-tagged drawers when query asks about preferences,
@@ -274,6 +290,9 @@ fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
     let query_asks_about_prefs = query_lower.contains("prefer")
         || query_lower.contains("convention")
         || query_lower.contains("style")
+        || query_lower.contains("interface")
+        || query_lower.contains("retrieval results")
+        || query_lower.contains("provenance")
         || query_lower.contains("always")
         || query_lower.contains("never")
         || query_lower.contains("how do you")
@@ -292,10 +311,52 @@ fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
         &query_lower,
         &text_lower,
         &room_lower,
-        &["current", "changed", "now", "last", "before", "direction"],
-        &["current", "changed", "now", "from", "to", "direction"],
+        &[
+            "current",
+            "changed",
+            "now",
+            "last",
+            "before",
+            "direction",
+            "proof",
+            "proves",
+            "priority",
+            "release theme",
+            "0.2.0",
+        ],
+        &[
+            "current",
+            "changed",
+            "now",
+            "from",
+            "to",
+            "direction",
+            "proof priority",
+            "eval suite",
+            "release theme",
+            "0.2.0",
+            "agent memory reliability",
+        ],
         &["current", "temporal"],
-        0.10,
+        0.12,
+    );
+    boost += intent_boost(
+        &query_lower,
+        &text_lower,
+        &room_lower,
+        &["session", "continuity", "warm-start", "warm start", "diary"],
+        &[
+            "session",
+            "continuity",
+            "warm-start",
+            "warm start",
+            "diary",
+            "project path",
+            "timestamp",
+            "tags",
+        ],
+        &["current", "session"],
+        0.11,
     );
 
     if text_lower.contains(&query_lower) {
