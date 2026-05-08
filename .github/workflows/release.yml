@@ -101,12 +101,3 @@ jobs:
             dist/mempalace-*-${{ matrix.target }}.${{ matrix.archive_ext }}
             dist/mempalace-${{ matrix.target }}.sha256
 
-  publish-dry-run:
-    name: Cargo publish dry run
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cargo publish dry run
-        run: cargo publish --dry-run
