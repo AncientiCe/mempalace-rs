@@ -8,7 +8,7 @@ use toml_edit::{value, Array, DocumentMut, Item, Table};
 
 const RULE_BEGIN: &str = "<!-- BEGIN MEMPALACE -->";
 const RULE_END: &str = "<!-- END MEMPALACE -->";
-const RULE_BODY: &str = "Before answering about a person, project, past decision, or user preference,\ncall `mempalace_search` (or `mempalace_kg_query` for entity facts). On session\nstart, call `mempalace_status` once. After substantive work, call\n`mempalace_diary_write`. When a stored fact changes, call\n`mempalace_kg_invalidate` then `mempalace_kg_add`. Storage is not memory; this\nprotocol is.";
+const RULE_BODY: &str = "**MANDATORY — follow every step, every session, no exceptions.**\n\n1. **SESSION START**: Call `mempalace_status` BEFORE doing anything else.\n2. **BEFORE ANSWERING** about any person, project, past decision, or preference: call `mempalace_search` or `mempalace_kg_query` first. Never answer from training data alone.\n3. **AFTER SUBSTANTIVE WORK**: call `mempalace_diary_write` to record what happened.\n4. **WHEN FACTS CHANGE**: call `mempalace_kg_invalidate` on the old fact, then `mempalace_kg_add` for the new one.\n\nSkipping any step is a protocol violation. Storage is not memory; this protocol is.";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -588,12 +588,12 @@ fn write_text_if_changed(path: &Path, existing: &str, next: &str, dry_run: bool)
 
 fn cursor_rule_text() -> String {
     format!(
-        "---\ndescription: Consult MemPalace memory before answering about remembered facts\nalwaysApply: true\n---\n\n# MemPalace Memory Protocol\n\n{RULE_BODY}\n"
+        "---\ndescription: Consult MemPalace memory before answering about remembered facts\nalwaysApply: true\n---\n\n# MemPalace Memory Protocol — MANDATORY\n\n{RULE_BODY}\n"
     )
 }
 
 fn managed_rule_block() -> String {
-    format!("{RULE_BEGIN}\n# MemPalace Memory Protocol\n\n{RULE_BODY}\n{RULE_END}")
+    format!("{RULE_BEGIN}\n# MemPalace Memory Protocol — MANDATORY\n\n{RULE_BODY}\n{RULE_END}")
 }
 
 fn upsert_managed_rule(existing: &str) -> Result<String> {
