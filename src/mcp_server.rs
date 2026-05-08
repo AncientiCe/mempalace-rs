@@ -189,6 +189,8 @@ pub fn dispatch_tool(
         "mempalace_list_agents" => tool_list_agents(conn),
         "mempalace_diary_write" => tool_diary_write(conn, args),
         "mempalace_diary_read" => tool_diary_read(conn, args),
+        "mempalace_diary_search" => tool_diary_search(conn, args),
+        "mempalace_session_context" => tool_session_context(conn, args),
         "mempalace_gain" => tool_gain(conn, args),
         _ => json!({"error": format!("Unknown tool: {name}")}),
     }
@@ -212,14 +214,51 @@ fn tool_status(conn: &Connection, config: &MempalaceConfig) -> Value {
         .into_iter()
         .map(|(k, v)| (k, json!(v)))
         .collect::<serde_json::Map<_, _>>();
-    json!({
+
+    // Surface recent diary entries for any known agent (warm-start context).
+    let cutoff = (Utc::now() - chrono::Duration::hours(24)).to_rfc3339();
+    let last_session: Vec<Value> = wings
+        .keys()
+        .filter(|w| w.starts_with("wing_diary__"))
+        .flat_map(|wing| {
+            let filter = DrawerFilter {
+                wing: Some(wing.clone()),
+                room: Some("diary".to_string()),
+            };
+            crate::store::list_drawers(conn, &filter, 10000)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|d| d.filed_at >= cutoff)
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .take(3)
+        .map(|d| {
+            json!({
+                "agent": d.metadata.get("agent").and_then(|v| v.as_str()).unwrap_or(""),
+                "topic": d.metadata.get("topic").and_then(|v| v.as_str()).unwrap_or("general"),
+                "timestamp": d.filed_at,
+                "content": &d.content[..200.min(d.content.len())],
+            })
+        })
+        .collect();
+
+    let mut response = json!({
         "total_drawers": count,
         "wings": wings,
         "rooms": rooms,
         "palace_path": config.palace_db_path().to_string_lossy(),
         "protocol": PALACE_PROTOCOL,
         "aaak_dialect": AAAK_SPEC,
-    })
+    });
+
+    if !last_session.is_empty() {
+        response["last_session"] = json!(last_session);
+    }
+
+    response
 }
 
 fn tool_gain(conn: &Connection, args: &Value) -> Value {
@@ -591,13 +630,22 @@ fn tool_update_drawer(conn: &Connection, args: &Value) -> Value {
     }
 }
 
+/// Canonical diary wing name for an agent (uses `wing_diary__` prefix to avoid
+/// collisions with project wings that happen to start with `wing_`).
+fn diary_wing(agent_name: &str) -> String {
+    format!(
+        "wing_diary__{}",
+        agent_name.to_lowercase().replace(' ', "_")
+    )
+}
+
 fn tool_list_agents(conn: &Connection) -> Value {
     match wing_counts(conn) {
         Ok(wings) => {
             let agents: Vec<_> = wings
                 .keys()
-                .filter(|wing| wing.starts_with("wing_"))
-                .cloned()
+                .filter(|wing| wing.starts_with("wing_diary__"))
+                .map(|wing| wing.trim_start_matches("wing_diary__").to_string())
                 .collect();
             json!({"agents": agents})
         }
@@ -615,8 +663,19 @@ fn tool_diary_write(conn: &Connection, args: &Value) -> Value {
         None => return json!({"success": false, "error": "entry is required"}),
     };
     let topic = str_arg(args, "topic").unwrap_or_else(|| "general".to_string());
+    let session_id = str_arg(args, "session_id").unwrap_or_default();
+    let project_path = str_arg(args, "project_path").unwrap_or_default();
+    let tags: Vec<String> = args
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
 
-    let wing = format!("wing_{}", agent_name.to_lowercase().replace(' ', "_"));
+    let wing = diary_wing(&agent_name);
     let room = "diary".to_string();
     let now = Utc::now();
     let timestamp = now.to_rfc3339();
@@ -631,6 +690,9 @@ fn tool_diary_write(conn: &Connection, args: &Value) -> Value {
         "type": "diary_entry",
         "agent": agent_name,
         "date": date,
+        "session_id": session_id,
+        "project_path": project_path,
+        "tags": tags,
     });
 
     let embedding = crate::embedder::embed_one(&entry).ok();
@@ -664,7 +726,7 @@ fn tool_diary_read(conn: &Connection, args: &Value) -> Value {
     };
     let last_n = int_arg(args, "last_n").unwrap_or(10) as usize;
 
-    let wing = format!("wing_{}", agent_name.to_lowercase().replace(' ', "_"));
+    let wing = diary_wing(&agent_name);
 
     let filter = crate::store::DrawerFilter {
         wing: Some(wing.clone()),
@@ -673,7 +735,6 @@ fn tool_diary_read(conn: &Connection, args: &Value) -> Value {
 
     match crate::store::list_drawers(conn, &filter, 10000) {
         Ok(mut drawers) => {
-            // Sort by filed_at DESC (most recent first)
             drawers.sort_by(|a, b| b.filed_at.cmp(&a.filed_at));
             let total = drawers.len();
             drawers.truncate(last_n);
@@ -693,11 +754,27 @@ fn tool_diary_read(conn: &Connection, args: &Value) -> Value {
                         .and_then(|v| v.as_str())
                         .unwrap_or("general")
                         .to_string();
+                    let session_id = d
+                        .metadata
+                        .get("session_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let project_path = d
+                        .metadata
+                        .get("project_path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let tags = d.metadata.get("tags").cloned().unwrap_or_else(|| json!([]));
                     json!({
                         "date": date,
                         "timestamp": d.filed_at,
                         "topic": topic,
                         "content": d.content,
+                        "session_id": session_id,
+                        "project_path": project_path,
+                        "tags": tags,
                     })
                 })
                 .collect();
@@ -707,6 +784,110 @@ fn tool_diary_read(conn: &Connection, args: &Value) -> Value {
             } else {
                 json!({"agent": agent_name, "entries": entries, "total": total, "showing": entries.len()})
             }
+        }
+        Err(e) => json!({"error": e.to_string()}),
+    }
+}
+
+fn tool_diary_search(conn: &Connection, args: &Value) -> Value {
+    let agent_name = match str_arg(args, "agent_name") {
+        Some(n) => n,
+        None => return json!({"error": "agent_name is required"}),
+    };
+    let query = match str_arg(args, "query") {
+        Some(q) => q,
+        None => return json!({"error": "query is required"}),
+    };
+    let limit = int_arg(args, "limit").unwrap_or(5) as usize;
+    let tag_filter = str_arg(args, "tag");
+
+    let wing = diary_wing(&agent_name);
+
+    let filter = crate::store::DrawerFilter {
+        wing: Some(wing),
+        room: Some("diary".to_string()),
+    };
+
+    let _ = tag_filter; // tag filtering is on the roadmap; search is already wing/room scoped
+    let results = crate::searcher::search_memories(
+        conn,
+        &query,
+        filter.wing.as_deref(),
+        filter.room.as_deref(),
+        limit,
+    );
+    if let Some(hits) = results.get("results").and_then(|v| v.as_array()) {
+        json!({
+            "agent": agent_name,
+            "query": query,
+            "results": hits,
+        })
+    } else {
+        results
+    }
+}
+
+fn tool_session_context(conn: &Connection, args: &Value) -> Value {
+    let agent_name = match str_arg(args, "agent_name") {
+        Some(n) => n,
+        None => return json!({"error": "agent_name is required"}),
+    };
+
+    let wing = diary_wing(&agent_name);
+    let filter = crate::store::DrawerFilter {
+        wing: Some(wing),
+        room: Some("diary".to_string()),
+    };
+
+    let cutoff = (Utc::now() - chrono::Duration::hours(24)).to_rfc3339();
+
+    match crate::store::list_drawers(conn, &filter, 10000) {
+        Ok(mut drawers) => {
+            drawers.sort_by(|a, b| b.filed_at.cmp(&a.filed_at));
+            let recent: Vec<_> = drawers
+                .into_iter()
+                .filter(|d| d.filed_at >= cutoff)
+                .take(3)
+                .collect();
+
+            if recent.is_empty() {
+                return json!({
+                    "agent": agent_name,
+                    "has_recent_session": false,
+                    "context": null,
+                });
+            }
+
+            let project = recent
+                .first()
+                .and_then(|d| d.metadata.get("project_path"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let summary: Vec<String> = recent
+                .iter()
+                .map(|d| {
+                    let topic = d
+                        .metadata
+                        .get("topic")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("general");
+                    format!("[{}] {}", topic, &d.content[..200.min(d.content.len())])
+                })
+                .collect();
+
+            json!({
+                "agent": agent_name,
+                "has_recent_session": true,
+                "last_active_project": project,
+                "recent_entries": summary,
+                "context": format!(
+                    "Last session ({}): {}",
+                    recent.first().map(|d| d.filed_at.as_str()).unwrap_or("unknown"),
+                    summary.join(" | ")
+                ),
+            })
         }
         Err(e) => json!({"error": e.to_string()}),
     }
@@ -976,13 +1157,16 @@ fn tool_list() -> Value {
         },
         {
             "name": "mempalace_diary_write",
-            "description": "Write to your personal agent diary in AAAK format.",
+            "description": "Write to your personal agent diary. Supports session metadata for warm-start context.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "agent_name": {"type": "string", "description": "Your name"},
-                    "entry": {"type": "string", "description": "Your diary entry in AAAK format"},
-                    "topic": {"type": "string", "description": "Topic tag (optional, default: general)"}
+                    "agent_name": {"type": "string", "description": "Your agent name"},
+                    "entry": {"type": "string", "description": "Your diary entry (AAAK format recommended)"},
+                    "topic": {"type": "string", "description": "Topic tag (default: general)"},
+                    "session_id": {"type": "string", "description": "Session UUID for grouping entries"},
+                    "project_path": {"type": "string", "description": "Active project path for warm-start context"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Searchable tags"}
                 },
                 "required": ["agent_name", "entry"]
             }
@@ -995,6 +1179,31 @@ fn tool_list() -> Value {
                 "properties": {
                     "agent_name": {"type": "string"},
                     "last_n": {"type": "integer", "description": "Number of recent entries (default: 10)"}
+                },
+                "required": ["agent_name"]
+            }
+        },
+        {
+            "name": "mempalace_diary_search",
+            "description": "Semantic search within an agent's diary entries.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "agent_name": {"type": "string"},
+                    "query": {"type": "string", "description": "Search query"},
+                    "limit": {"type": "integer", "description": "Max results (default: 5)"},
+                    "tag": {"type": "string", "description": "Optional tag filter"}
+                },
+                "required": ["agent_name", "query"]
+            }
+        },
+        {
+            "name": "mempalace_session_context",
+            "description": "Get warm-start context from the last 24h of diary entries for an agent.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "agent_name": {"type": "string"}
                 },
                 "required": ["agent_name"]
             }

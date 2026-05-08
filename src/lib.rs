@@ -24,6 +24,7 @@ pub mod onboarding;
 pub mod origin;
 pub mod palace;
 pub mod palace_graph;
+pub mod preference;
 pub mod query_sanitizer;
 pub mod ranker;
 pub mod room_detector;

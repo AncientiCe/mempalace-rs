@@ -4,8 +4,8 @@
 //! returns verbatim text with similarity scores. Port of searcher.py.
 
 use crate::embedder::embed_one;
-use crate::ranker::hybrid_search;
-use crate::store::{source_context, DrawerFilter};
+use crate::ranker::{hybrid_search, HybridResult};
+use crate::store::{preference_search, source_context, DrawerFilter, SearchResult};
 use anyhow::Result;
 use rusqlite::Connection;
 
@@ -95,14 +95,19 @@ pub fn search_memories(
         room: room.map(String::from),
     };
 
-    let results = match hybrid_search(conn, effective_query, Some(&embedding), &filter, n_results) {
-        Ok(r) => r,
-        Err(e) => {
-            return serde_json::json!({
-                "error": format!("Search error: {e}"),
-            })
-        }
-    };
+    let mut results =
+        match hybrid_search(conn, effective_query, Some(&embedding), &filter, n_results) {
+            Ok(r) => r,
+            Err(e) => {
+                return serde_json::json!({
+                    "error": format!("Search error: {e}"),
+                })
+            }
+        };
+
+    // Merge dedicated preference recall pass — surfaces preference drawers even
+    // when BM25 has no keyword overlap (the known R@1 weakness).
+    merge_preference_results(conn, &embedding, &mut results, n_results);
 
     let hits: Vec<serde_json::Value> = results
         .iter()
@@ -160,4 +165,51 @@ pub fn search_memories(
         },
         "results": hits,
     })
+}
+
+/// Merge preference-tagged drawers into hybrid results, deduplicating by ID.
+///
+/// Preference drawers are weighted at 0.4 of their cosine similarity so they
+/// supplement (rather than displace) strong non-preference matches. Only the top
+/// half of preference candidates (cosine ≥ 0.25) are considered.
+fn merge_preference_results(
+    conn: &Connection,
+    query_vec: &[f32],
+    results: &mut Vec<HybridResult>,
+    n_results: usize,
+) {
+    let pref_candidates = match preference_search(conn, query_vec, 10) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let existing_ids: std::collections::HashSet<String> =
+        results.iter().map(|r| r.drawer.id.clone()).collect();
+
+    for pref in pref_candidates {
+        if pref.similarity < 0.25 {
+            break; // already sorted descending — skip low-relevance preferences
+        }
+        if existing_ids.contains(&pref.id) {
+            continue;
+        }
+        let combined = pref.similarity * 0.4;
+        results.push(HybridResult {
+            cosine: pref.similarity,
+            bm25: 0.0,
+            coding_boost: 0.0,
+            combined,
+            drawer: SearchResult {
+                similarity: (combined * 1000.0).round() / 1000.0,
+                ..pref
+            },
+        });
+    }
+
+    results.sort_by(|a, b| {
+        b.combined
+            .partial_cmp(&a.combined)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    results.truncate(n_results);
 }

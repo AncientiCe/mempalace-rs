@@ -267,6 +267,27 @@ fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
         &["preference", "preferences"],
         0.12,
     );
+
+    // Extra boost for preference-tagged drawers when query asks about preferences,
+    // conventions, or style — compensates for embedding distance between the question
+    // form ("what do I prefer?") and the stored assertion form ("I prefer X").
+    let query_asks_about_prefs = query_lower.contains("prefer")
+        || query_lower.contains("convention")
+        || query_lower.contains("style")
+        || query_lower.contains("always")
+        || query_lower.contains("never")
+        || query_lower.contains("how do you")
+        || query_lower.contains("what do you think");
+    let text_is_preference = text_lower.contains("i prefer")
+        || text_lower.contains("i always")
+        || text_lower.contains("i never")
+        || text_lower.contains("my convention")
+        || text_lower.contains("my style")
+        || text_lower.contains("i tend to")
+        || text_lower.contains("prefer to");
+    if query_asks_about_prefs && text_is_preference {
+        boost += 0.10;
+    }
     boost += intent_boost(
         &query_lower,
         &text_lower,

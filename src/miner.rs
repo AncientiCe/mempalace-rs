@@ -272,14 +272,16 @@ pub fn mine(
         }
 
         let mut drawers_added = 0usize;
-        for (chunk_text, chunk_index) in &chunks {
-            let embedding = crate::embedder::embed_one(chunk_text).ok();
+        let chunk_texts: Vec<&str> = chunks.iter().map(|(t, _)| t.as_str()).collect();
+        let embeddings = crate::embedder::embed_batch(&chunk_texts).unwrap_or_default();
+        for (idx, (chunk_text, chunk_index)) in chunks.iter().enumerate() {
+            let embedding = embeddings.get(idx).map(|e| e.as_slice());
             let (added, _) = add_drawer(
                 conn,
                 &wing,
                 &room,
                 chunk_text,
-                embedding.as_deref(),
+                embedding,
                 &source_file,
                 *chunk_index,
                 agent,
