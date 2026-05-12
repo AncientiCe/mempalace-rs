@@ -147,9 +147,12 @@ jobs:
           PALACE_LOCAL_ARCHIVE: ${{ github.workspace }}/dist/palace-local-${{ matrix.target }}.zip
           PALACE_INSTALL_DIR: ${{ runner.temp }}\palace-bin
         run: |
-          $env:HOME = Join-Path $env:RUNNER_TEMP "palace-home"
-          New-Item -ItemType Directory -Force -Path $env:HOME | Out-Null
+          # On Windows, `palace install` resolves the home directory via
+          # SHGetKnownFolderPath (FOLDERID_Profile) and ignores $env:HOME, so
+          # configs always land in the real user profile. Assert against
+          # $env:USERPROFILE rather than a redirected HOME.
           ./scripts/install.ps1
           & (Join-Path $env:PALACE_INSTALL_DIR "palace.exe") --version
           & (Join-Path $env:PALACE_INSTALL_DIR "mempalace.exe") --version
-          if (-not (Test-Path (Join-Path $env:HOME ".cursor/mcp.json"))) { throw "Cursor config was not written" }
+          $cursorConfig = Join-Path $env:USERPROFILE ".cursor\mcp.json"
+          if (-not (Test-Path $cursorConfig)) { throw "Cursor config was not written at $cursorConfig" }
