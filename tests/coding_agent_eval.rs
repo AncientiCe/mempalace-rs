@@ -43,6 +43,10 @@ const DOCS: &[EvalDoc] = &[
     EvalDoc { id: "current/trust.md", room: "current", text: "Current trust model keeps verbatim drawers as source of truth and treats extracted memories as indexes or pointers." },
     EvalDoc { id: "current/session_context.md", room: "current", text: "Current session continuity comes from recent diary entries with project path, topic, timestamp, compact text, and tags." },
     EvalDoc { id: "current/release_theme.md", room: "current", text: "Current release theme for version 0.1.9 is agent memory reliability, especially preference recall and warm-start context." },
+    EvalDoc { id: "routing/memory_first.md", room: "conventions", text: "Memory-first routing rule: search Palace before grep for remembered decisions, prior fixes, conventions, preferences, prior commands, and what happened last time." },
+    EvalDoc { id: "routing/code_first.md", room: "conventions", text: "Code-search-first routing rule: use grep or code search first for current symbols, exact definitions, exact files, and implementation details that may have changed since mining." },
+    EvalDoc { id: "fixes/retrieval.md", room: "problems", text: "Agents kept using grep for remembered project history; the fix was stronger memory-first rules plus Palace verification and recall-check diagnostics." },
+    EvalDoc { id: "current/conflicts.md", room: "current", text: "Current reliability work includes surfacing stale or contradictory memories so agents do not cite outdated facts as current truth." },
 ];
 
 const QUESTIONS: &[EvalQuestion] = &[
@@ -276,6 +280,31 @@ const QUESTIONS: &[EvalQuestion] = &[
         gold_source: "fixes/dedupe.md",
         category: "fix",
     },
+    EvalQuestion {
+        query: "when should agents search Palace before grep?",
+        gold_source: "routing/memory_first.md",
+        category: "memory-first",
+    },
+    EvalQuestion {
+        query: "when is grep still the right first tool?",
+        gold_source: "routing/code_first.md",
+        category: "code-first",
+    },
+    EvalQuestion {
+        query: "why did we improve the rules about grep?",
+        gold_source: "fixes/retrieval.md",
+        category: "fix",
+    },
+    EvalQuestion {
+        query: "what should prevent agents from citing stale facts?",
+        gold_source: "current/conflicts.md",
+        category: "temporal",
+    },
+    EvalQuestion {
+        query: "what happened last time agents used grep instead of memory?",
+        gold_source: "fixes/retrieval.md",
+        category: "memory-first",
+    },
 ];
 
 #[test]
@@ -299,6 +328,7 @@ fn coding_agent_memory_eval_has_stable_recall() {
     let mut top1 = 0usize;
     let mut top5 = 0usize;
     let mut failures = Vec::new();
+    let mut top1_misses = Vec::new();
 
     for question in QUESTIONS {
         let results = hybrid_search(&conn, question.query, None, &DrawerFilter::default(), 5)
@@ -308,6 +338,16 @@ fn coding_agent_memory_eval_has_stable_recall() {
             .is_some_and(|result| result.drawer.source_file == question.gold_source)
         {
             top1 += 1;
+        } else {
+            top1_misses.push((
+                question.category,
+                question.query,
+                question.gold_source,
+                results
+                    .first()
+                    .map(|result| result.drawer.source_file.clone())
+                    .unwrap_or_else(|| "<none>".to_string()),
+            ));
         }
         if results
             .iter()
@@ -325,6 +365,20 @@ fn coding_agent_memory_eval_has_stable_recall() {
         "coding-agent eval: recall@1={recall_at_1:.3} recall@5={recall_at_5:.3} failures={failures:?}"
     );
 
-    assert!(recall_at_1 >= 0.85, "recall@1 too low: {recall_at_1:.3}");
+    assert!(
+        recall_at_1 >= 0.85,
+        "recall@1 too low: {recall_at_1:.3}; first_top1_misses={:?}",
+        top1_misses
+            .iter()
+            .take(1)
+            .map(|(_, _, gold, got)| {
+                format!(
+                    "{}!={}",
+                    got.rsplit('/').next().unwrap_or(got),
+                    gold.rsplit('/').next().unwrap_or(gold)
+                )
+            })
+            .collect::<Vec<_>>()
+    );
     assert!(recall_at_5 >= 0.95, "recall@5 too low: {recall_at_5:.3}");
 }

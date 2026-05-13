@@ -37,10 +37,19 @@ pub struct GainReport {
     pub repeat_questions_avoided: i64,
     pub p50_latency_ms: i64,
     pub p95_latency_ms: i64,
+    pub per_tool_latency: Vec<ToolLatency>,
     pub top_wings: Vec<NamedCount>,
     pub top_rooms: Vec<NamedCount>,
     pub top_reused_queries: Vec<NamedCount>,
     pub per_project: Vec<ProjectGain>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolLatency {
+    pub tool: String,
+    pub calls: i64,
+    pub p50_latency_ms: i64,
+    pub p95_latency_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,7 +213,7 @@ pub fn render_text(report: &GainReport) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "MemPalace gain - {} ({})\n  Tool calls         : {}   (sessions: {})\n  Hit rate           : {:.0}%   (search hits {}/{})\n  Tokens saved (est) : ~{}\n  Re-index skipped   : {}    (duplicate drawers avoided)\n  KG facts recalled  : {}\n  Diary recalls      : {}\n  Repeat Qs avoided  : {}\n  p95 latency        : {} ms\n  Top wings          : {}\n  Top projects       : {}\n",
+        "MemPalace gain - {} ({})\n  Tool calls         : {}   (sessions: {})\n  Hit rate           : {:.0}%   (search hits {}/{})\n  Tokens saved (est) : ~{}\n  Re-index skipped   : {}    (duplicate drawers avoided)\n  KG facts recalled  : {}\n  Diary recalls      : {}\n  Repeat Qs avoided  : {}\n  p95 latency        : {} ms\n  Tool latency       : {}\n  Top wings          : {}\n  Top projects       : {}\n",
         report.window,
         project,
         format_number(report.tool_calls),
@@ -218,6 +227,7 @@ pub fn render_text(report: &GainReport) -> String {
         report.diary_recalls,
         report.repeat_questions_avoided,
         report.p95_latency_ms,
+        render_tool_latencies(&report.per_tool_latency),
         if top_wings.is_empty() {
             "none".to_string()
         } else {
@@ -297,6 +307,7 @@ fn build_report(events: Vec<UsageRow>, options: &GainOptions) -> GainReport {
     let mut latencies = Vec::new();
     let mut top_wings: HashMap<String, i64> = HashMap::new();
     let mut top_rooms: HashMap<String, i64> = HashMap::new();
+    let mut tool_latencies: HashMap<String, Vec<i64>> = HashMap::new();
     let mut query_counts: HashMap<String, i64> = HashMap::new();
     let mut seen_queries: HashSet<String> = HashSet::new();
     let mut seen_project_queries: HashMap<String, HashSet<String>> = HashMap::new();
@@ -314,6 +325,10 @@ fn build_report(events: Vec<UsageRow>, options: &GainOptions) -> GainReport {
     for event in &events {
         sessions.insert(event.session_id.clone());
         latencies.push(event.duration_ms);
+        tool_latencies
+            .entry(event.tool.clone())
+            .or_default()
+            .push(event.duration_ms);
         tokens_saved_est += event.est_tokens_saved;
 
         if event.tool == "palace_search" {
@@ -410,6 +425,7 @@ fn build_report(events: Vec<UsageRow>, options: &GainOptions) -> GainReport {
         repeat_questions_avoided,
         p50_latency_ms: percentile(latencies.clone(), 50.0),
         p95_latency_ms: percentile(latencies, 95.0),
+        per_tool_latency: finish_tool_latencies(tool_latencies),
         top_wings: top_counts(top_wings, 5),
         top_rooms: top_counts(top_rooms, 5),
         top_reused_queries: top_counts(query_counts, 5)
@@ -422,6 +438,20 @@ fn build_report(events: Vec<UsageRow>, options: &GainOptions) -> GainReport {
             .collect::<Vec<_>>()
             .tap_sort_projects(),
     }
+}
+
+fn finish_tool_latencies(tool_latencies: HashMap<String, Vec<i64>>) -> Vec<ToolLatency> {
+    let mut items = tool_latencies
+        .into_iter()
+        .map(|(tool, values)| ToolLatency {
+            tool,
+            calls: values.len() as i64,
+            p50_latency_ms: percentile(values.clone(), 50.0),
+            p95_latency_ms: percentile(values, 95.0),
+        })
+        .collect::<Vec<_>>();
+    items.sort_by(|a, b| b.calls.cmp(&a.calls).then_with(|| a.tool.cmp(&b.tool)));
+    items
 }
 
 #[derive(Default)]
@@ -501,6 +531,23 @@ fn render_named_counts(items: &[NamedCount]) -> String {
     items
         .iter()
         .map(|item| format!("{}({})", item.name, item.count))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn render_tool_latencies(items: &[ToolLatency]) -> String {
+    if items.is_empty() {
+        return "none".to_string();
+    }
+    items
+        .iter()
+        .take(5)
+        .map(|item| {
+            format!(
+                "{}(p50 {} ms, p95 {} ms)",
+                item.tool, item.p50_latency_ms, item.p95_latency_ms
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }

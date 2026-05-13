@@ -182,6 +182,9 @@ pub fn dispatch_tool(conn: &Connection, config: &PalaceConfig, name: &str, args:
         "palace_diary_search" => tool_diary_search(conn, args),
         "palace_session_context" => tool_session_context(conn, args),
         "palace_gain" => tool_gain(conn, args),
+        "palace_verify" => tool_verify(conn, config),
+        "palace_recall_check" => tool_recall_check(conn, args),
+        "palace_conflicts" => tool_conflicts(conn, args),
         "palace_remember" => tool_remember(conn, args),
         "palace_forget" => tool_forget(conn, args),
         "palace_explain" => tool_explain(conn, args),
@@ -283,6 +286,147 @@ fn tool_gain(conn: &Connection, args: &Value) -> Value {
 
     match crate::gain::summarize(conn, &options) {
         Ok(report) => json!(report),
+        Err(err) => json!({"error": err.to_string()}),
+    }
+}
+
+fn tool_verify(conn: &Connection, config: &PalaceConfig) -> Value {
+    let drawer_count = count_drawers(conn).unwrap_or(0);
+    let unembedded = crate::store::count_unembedded(conn).unwrap_or(0);
+    let corrupted_embeddings = count_corrupted_embeddings(conn);
+    let db_integrity = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+        .unwrap_or_else(|_| "not checked".to_string());
+    let model_cached = embedding_model_cached();
+    let tools = tool_names();
+    let required_tools = [
+        "palace_status",
+        "palace_search",
+        "palace_preference_search",
+        "palace_recall_check",
+        "palace_conflicts",
+        "palace_diary_write",
+    ];
+    let missing_tools = required_tools
+        .iter()
+        .filter(|name| !tools.iter().any(|tool| tool == **name))
+        .copied()
+        .collect::<Vec<_>>();
+    let ok = missing_tools.is_empty() && db_integrity == "ok" && corrupted_embeddings == 0;
+
+    json!({
+        "ok": ok,
+        "mcp": {
+            "server_name": "palace",
+            "version": env!("CARGO_PKG_VERSION"),
+            "tools": tools,
+            "missing_required_tools": missing_tools,
+        },
+        "database": {
+            "path": config.palace_db_path().to_string_lossy(),
+            "drawer_count": drawer_count,
+            "unembedded_drawers": unembedded,
+            "corrupted_embeddings": corrupted_embeddings,
+            "integrity": db_integrity,
+        },
+        "model": {
+            "name": "all-MiniLM-L6-v2",
+            "cached": model_cached,
+            "cold_start_note": if model_cached {
+                "model is cached; normal search should avoid download latency"
+            } else {
+                "first embedding search may download and warm the model"
+            },
+        },
+    })
+}
+
+fn tool_recall_check(conn: &Connection, args: &Value) -> Value {
+    let checks = match args.get("checks").and_then(Value::as_array) {
+        Some(checks) if !checks.is_empty() => checks,
+        _ => return json!({"ok": false, "error": "checks array is required"}),
+    };
+    let limit = int_arg(args, "limit").unwrap_or(5).max(1) as usize;
+    let mut passed = 0usize;
+    let mut rows = Vec::new();
+
+    for check in checks {
+        let query = check
+            .get("query")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        let expected_source = check
+            .get("expected_source")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if query.is_empty() || expected_source.is_empty() {
+            rows.push(json!({
+                "query": query,
+                "expected_source": expected_source,
+                "passed": false,
+                "error": "query and expected_source are required",
+            }));
+            continue;
+        }
+        let filter = DrawerFilter {
+            wing: check
+                .get("wing")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            room: check
+                .get("room")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        };
+        let results = match crate::ranker::hybrid_search(conn, query, None, &filter, limit) {
+            Ok(results) => results,
+            Err(err) => {
+                rows.push(json!({
+                    "query": query,
+                    "expected_source": expected_source,
+                    "passed": false,
+                    "error": err.to_string(),
+                }));
+                continue;
+            }
+        };
+        let rank = results
+            .iter()
+            .position(|result| result.drawer.source_file == expected_source)
+            .map(|idx| idx + 1);
+        let check_passed = rank.is_some();
+        if check_passed {
+            passed += 1;
+        }
+        rows.push(json!({
+            "query": query,
+            "expected_source": expected_source,
+            "passed": check_passed,
+            "rank": rank,
+            "top_source": results.first().map(|result| result.drawer.source_file.clone()),
+            "top_similarity": results.first().map(|result| result.drawer.similarity),
+        }));
+    }
+
+    let failed = checks.len().saturating_sub(passed);
+    json!({
+        "ok": failed == 0,
+        "passed": passed,
+        "failed": failed,
+        "checks": rows,
+    })
+}
+
+fn tool_conflicts(conn: &Connection, args: &Value) -> Value {
+    let entity = str_arg(args, "entity");
+    match find_conflicts(conn, entity.as_deref()) {
+        Ok(conflicts) => json!({
+            "entity": entity,
+            "count": conflicts.len(),
+            "conflicts": conflicts,
+        }),
         Err(err) => json!({"error": err.to_string()}),
     }
 }
@@ -1061,6 +1205,116 @@ fn tool_export(conn: &Connection) -> Value {
     }
 }
 
+fn count_corrupted_embeddings(conn: &Connection) -> i64 {
+    let expected_bytes = (crate::embedder::EMBEDDING_DIM * std::mem::size_of::<f32>()) as i64;
+    conn.query_row(
+        "SELECT COUNT(*) FROM drawers WHERE embedding IS NOT NULL AND length(embedding) != ?1",
+        [expected_bytes],
+        |row| row.get(0),
+    )
+    .unwrap_or(0)
+}
+
+fn embedding_model_cached() -> bool {
+    let cache_base = if let Ok(path) = std::env::var("HF_HUB_CACHE") {
+        std::path::PathBuf::from(path)
+    } else if let Some(home) =
+        directories::UserDirs::new().map(|user| user.home_dir().to_path_buf())
+    {
+        home.join(".cache").join("huggingface").join("hub")
+    } else {
+        return false;
+    };
+    cache_base
+        .join("models--Qdrant--all-MiniLM-L6-v2-onnx")
+        .exists()
+}
+
+fn find_conflicts(conn: &Connection, entity: Option<&str>) -> Result<Vec<Value>> {
+    let entity_filter = entity.map(|name| name.to_lowercase().replace(' ', "_").replace('\'', ""));
+    let mut stmt = conn.prepare(
+        "SELECT t.id, s.name, t.predicate, o.name, t.valid_from, t.valid_to
+         FROM triples t
+         JOIN entities s ON t.subject = s.id
+         JOIN entities o ON t.object = o.id
+         WHERE (?1 IS NULL OR t.subject = ?1 OR t.object = ?1)
+         ORDER BY s.name, t.predicate, t.valid_from",
+    )?;
+    let rows = stmt.query_map([entity_filter.as_deref()], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+        ))
+    })?;
+
+    let mut grouped: std::collections::HashMap<(String, String), Vec<Value>> =
+        std::collections::HashMap::new();
+    for row in rows {
+        let (id, subject, predicate, object, valid_from, valid_to) = row?;
+        let current = valid_to.is_none();
+        grouped
+            .entry((subject.clone(), predicate.clone()))
+            .or_default()
+            .push(json!({
+                "id": id,
+                "subject": subject,
+                "predicate": predicate,
+                "object": object,
+                "valid_from": valid_from,
+                "valid_to": valid_to,
+                "current": current,
+            }));
+    }
+
+    let mut conflicts = Vec::new();
+    for ((subject, predicate), facts) in grouped {
+        let objects = facts
+            .iter()
+            .filter_map(|fact| fact.get("object").and_then(Value::as_str))
+            .collect::<std::collections::HashSet<_>>();
+        if objects.len() <= 1 || facts.len() <= 1 {
+            continue;
+        }
+        let triple_ids = facts
+            .iter()
+            .filter_map(|fact| fact.get("id").and_then(Value::as_str))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        conflicts.push(json!({
+            "subject": subject,
+            "predicate": predicate,
+            "triple_ids": triple_ids,
+            "facts": facts,
+        }));
+    }
+    conflicts.sort_by(|a, b| {
+        a.get("subject")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .cmp(b.get("subject").and_then(Value::as_str).unwrap_or(""))
+            .then_with(|| {
+                a.get("predicate")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .cmp(b.get("predicate").and_then(Value::as_str).unwrap_or(""))
+            })
+    });
+    Ok(conflicts)
+}
+
+fn tool_names() -> Vec<String> {
+    tool_list()
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|tool| tool.get("name").and_then(Value::as_str).map(str::to_string))
+        .collect()
+}
+
 // ── Tool schema list ──────────────────────────────────────────────────────
 
 fn tool_list() -> Value {
@@ -1081,6 +1335,45 @@ fn tool_list() -> Value {
                     "history": {"type": "boolean", "description": "Return recent usage events instead of summary"},
                     "limit": {"type": "integer", "description": "History limit (default: 20)"},
                     "reset": {"type": "boolean", "description": "Delete usage events for the project, or all projects if omitted"}
+                }
+            }
+        },
+        {
+            "name": "palace_verify",
+            "description": "Verify Palace MCP health: visible tools, database integrity, embedding status, and model cache.",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "palace_recall_check",
+            "description": "Run project-memory probes and report whether expected memories are retrievable.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "checks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "query": {"type": "string"},
+                                "expected_source": {"type": "string"},
+                                "wing": {"type": "string"},
+                                "room": {"type": "string"}
+                            },
+                            "required": ["query", "expected_source"]
+                        }
+                    },
+                    "limit": {"type": "integer", "description": "Max results per probe (default 5)"}
+                },
+                "required": ["checks"]
+            }
+        },
+        {
+            "name": "palace_conflicts",
+            "description": "Surface likely stale or contradictory knowledge graph facts.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "entity": {"type": "string", "description": "Entity to inspect (optional)"}
                 }
             }
         },

@@ -238,6 +238,109 @@ fn explain_unknown_id_returns_error() {
     assert!(result.get("error").is_some());
 }
 
+// ── Reliability tools ─────────────────────────────────────────────────────
+
+#[test]
+fn verify_reports_mcp_database_and_tool_health() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+
+    let result =
+        palace::mcp_server::dispatch_tool(&conn, &config, "palace_verify", &serde_json::json!({}));
+
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["mcp"]["server_name"], "palace");
+    assert_eq!(result["database"]["drawer_count"], 0);
+    let tools = result["mcp"]["tools"].as_array().expect("tools array");
+    assert!(tools.iter().any(|tool| tool == "palace_search"));
+    assert!(tools.iter().any(|tool| tool == "palace_recall_check"));
+    assert!(tools.iter().any(|tool| tool == "palace_conflicts"));
+}
+
+#[test]
+fn recall_check_reports_expected_memory_hits() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+    store::add_drawer(
+        &conn,
+        "palace_rs",
+        "decisions",
+        "We chose bundled SQLite so local coding agents do not need Chroma.",
+        None,
+        "decisions/sqlite.md",
+        0,
+        "test",
+        3.0,
+    )
+    .unwrap();
+
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_recall_check",
+        &serde_json::json!({
+            "checks": [
+                {
+                    "query": "why did we choose bundled sqlite?",
+                    "expected_source": "decisions/sqlite.md",
+                    "wing": "palace_rs"
+                }
+            ]
+        }),
+    );
+
+    assert_eq!(result["ok"], true);
+    assert_eq!(result["passed"], 1);
+    assert_eq!(result["failed"], 0);
+    assert_eq!(result["checks"][0]["passed"], true);
+}
+
+#[test]
+fn conflicts_surface_active_and_ended_fact_versions() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+    let old = knowledge_graph::add_triple(
+        &conn,
+        "project",
+        "database",
+        "Chroma",
+        Some("2026-01-01"),
+        Some("2026-05-01"),
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
+    let new = knowledge_graph::add_triple(
+        &conn,
+        "project",
+        "database",
+        "SQLite",
+        Some("2026-05-02"),
+        None,
+        1.0,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_conflicts",
+        &serde_json::json!({"entity": "project"}),
+    );
+
+    assert_eq!(result["count"], 1);
+    assert_eq!(result["conflicts"][0]["subject"], "project");
+    assert_eq!(result["conflicts"][0]["predicate"], "database");
+    let ids = result["conflicts"][0]["triple_ids"]
+        .as_array()
+        .expect("ids");
+    assert!(ids.iter().any(|id| id == &old));
+    assert!(ids.iter().any(|id| id == &new));
+}
+
 // ── palace_export ──────────────────────────────────────────────────────────
 
 #[test]

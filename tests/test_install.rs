@@ -69,6 +69,10 @@ fn install_writes_cursor_rule_mdc() {
     assert!(rule.contains("alwaysApply: true"));
     assert!(rule.contains("palace_status"));
     assert!(rule.contains("palace_search"));
+    assert!(rule.contains("MEMORY-FIRST"));
+    assert!(rule.contains("before grep"));
+    assert!(rule.contains("CODE-SEARCH-FIRST"));
+    assert!(rule.contains("cite the memory provenance"));
 }
 
 #[test]
@@ -402,7 +406,49 @@ fn install_claude_inserts_rule_block_into_claude_md() {
     let rule = fs::read_to_string(temp.path().join(".claude/CLAUDE.md")).unwrap();
     assert!(rule.contains("<!-- BEGIN PALACE -->"));
     assert!(rule.contains("palace_status"));
+    assert!(rule.contains("MEMORY-FIRST"));
+    assert!(rule.contains("CODE-SEARCH-FIRST"));
     assert!(rule.contains("<!-- END PALACE -->"));
+}
+
+#[test]
+fn installed_rules_include_memory_routing_for_codex_managed_block() {
+    let temp = TempDir::new().unwrap();
+    let binary_path = fake_binary(temp.path());
+
+    install_clients(&options(temp.path(), &binary_path, vec![Client::Codex])).unwrap();
+
+    let codex_rule = fs::read_to_string(temp.path().join(".codex/AGENTS.md")).unwrap();
+
+    assert!(codex_rule.contains("MEMORY-FIRST"));
+    assert!(codex_rule.contains("before grep"));
+    assert!(codex_rule.contains("CODE-SEARCH-FIRST"));
+    assert!(codex_rule.contains("cite the memory provenance"));
+}
+
+#[test]
+fn doctor_marks_rule_weak_without_memory_routing() {
+    let temp = TempDir::new().unwrap();
+    let codex_dir = temp.path().join(".codex");
+    fs::create_dir_all(&codex_dir).unwrap();
+    fs::write(
+        codex_dir.join("AGENTS.md"),
+        "<!-- BEGIN PALACE -->\n# Palace Memory Protocol\n\nCall palace_status and palace_search.\n<!-- END PALACE -->\n",
+    )
+    .unwrap();
+
+    let binary_path = fake_binary(temp.path());
+    let install_options = options(temp.path(), &binary_path, vec![Client::Codex]);
+    let report = doctor(&install_options).unwrap();
+
+    assert!(report
+        .clients
+        .iter()
+        .any(|s| s.client == Client::Codex && s.rule_weak));
+    assert!(report
+        .adoption_warnings
+        .iter()
+        .any(|warning| { warning.contains("Codex") && warning.contains("memory before grep") }));
 }
 
 #[test]

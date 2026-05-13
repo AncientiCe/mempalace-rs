@@ -77,6 +77,50 @@ fn aggregates_value_metrics_by_project() {
     assert_eq!(report.diary_recalls, 4);
     assert_eq!(report.per_project.len(), 2);
     assert_eq!(report.per_project[0].project, "alpha");
+    assert!(report
+        .per_tool_latency
+        .iter()
+        .any(|item| item.tool == "palace_search"
+            && item.calls == 1
+            && item.p50_latency_ms == 10
+            && item.p95_latency_ms == 10));
+}
+
+#[test]
+fn summarizes_latency_by_tool() {
+    let conn = palace::db::open_in_memory().expect("open test db");
+    let now = Utc::now().to_rfc3339();
+
+    let mut first = event(now.clone(), "alpha", "palace_search", "hit");
+    first.duration_ms = 5;
+    insert_event(&conn, &first).expect("insert first");
+
+    let mut second = event(now.clone(), "alpha", "palace_search", "hit");
+    second.duration_ms = 25;
+    insert_event(&conn, &second).expect("insert second");
+
+    let mut third = event(now, "alpha", "palace_verify", "hit");
+    third.duration_ms = 2;
+    insert_event(&conn, &third).expect("insert third");
+
+    let report = summarize(&conn, &options(None, SinceWindow::All)).expect("summarize");
+
+    let search = report
+        .per_tool_latency
+        .iter()
+        .find(|item| item.tool == "palace_search")
+        .expect("search latency");
+    assert_eq!(search.calls, 2);
+    assert_eq!(search.p50_latency_ms, 25);
+    assert_eq!(search.p95_latency_ms, 25);
+
+    let verify = report
+        .per_tool_latency
+        .iter()
+        .find(|item| item.tool == "palace_verify")
+        .expect("verify latency");
+    assert_eq!(verify.calls, 1);
+    assert_eq!(verify.p50_latency_ms, 2);
 }
 
 #[test]

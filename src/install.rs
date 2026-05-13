@@ -10,7 +10,7 @@ use toml_edit::{value, Array, DocumentMut, Item, Table};
 // ── Current marker names (0.2.0+) ────────────────────────────────────────────
 const RULE_BEGIN: &str = "<!-- BEGIN PALACE -->";
 const RULE_END: &str = "<!-- END PALACE -->";
-pub const RULE_BODY: &str = "**MANDATORY — follow every step, every session, no exceptions.**\n\n1. **SESSION START**: Call `palace_status` BEFORE doing anything else.\n2. **BEFORE ANSWERING** about any person, project, past decision, or preference: call `palace_search` or `palace_kg_query` first. Never answer from training data alone.\n3. **FOR PREFERENCES / CONVENTIONS**: call `palace_preference_search` — it surfaces style/convention drawers that plain search misses.\n4. **AFTER SUBSTANTIVE WORK**: call `palace_diary_write` to record what happened.\n5. **WHEN FACTS CHANGE**: call `palace_kg_invalidate` on the old fact, then `palace_kg_add` for the new one.\n6. **TO FILE A KEY FACT**: use `palace_remember` (importance=5). To delete outdated info: `palace_forget`.\n\nSkipping any step is a protocol violation. Storage is not memory; this protocol is.";
+pub const RULE_BODY: &str = "**MANDATORY — follow every step, every session, no exceptions.**\n\n1. **SESSION START**: Call `palace_status` BEFORE doing anything else.\n2. **MEMORY-FIRST**: before grep, file search, or code search, call `palace_search` for questions about remembered decisions, prior fixes, conventions, user preferences, commands that worked before, session history, or \"what happened last time?\".\n3. **CODE-SEARCH-FIRST**: Use grep/code search first only for current symbols, exact definitions, exact files, or implementation details that may have changed since mining.\n4. **BEFORE ANSWERING** about any person, project, past decision, or preference: call `palace_search` or `palace_kg_query` first. Never answer from training data alone.\n5. **FOR PREFERENCES / CONVENTIONS**: call `palace_preference_search` — it surfaces style/convention drawers that plain search misses.\n6. **WHEN PALACE ANSWERS**: cite the memory provenance: wing, room, source file or drawer id, and any score/provenance fields returned.\n7. **AFTER SUBSTANTIVE WORK**: call `palace_diary_write` to record what happened.\n8. **WHEN FACTS CHANGE**: call `palace_kg_invalidate` on the old fact, then `palace_kg_add` for the new one.\n9. **TO FILE A KEY FACT**: use `palace_remember` (importance=5). To delete outdated info: `palace_forget`.\n\nSkipping any step is a protocol violation. Storage is not memory; this protocol is.";
 
 // ── Legacy marker names (0.1.x) — recognized for migration, never written ────
 const LEGACY_RULE_BEGIN: &str = "<!-- BEGIN MEMPALACE -->";
@@ -68,6 +68,8 @@ pub struct ClientStatus {
     /// True if the rule file exists but contains stale/legacy content
     /// (e.g. old `mempalace_*` tool names from 0.1.x).
     pub rule_stale: bool,
+    /// True if the rule exists but lacks memory-vs-code-search routing guidance.
+    pub rule_weak: bool,
     pub hook_installed: bool,
 }
 
@@ -85,6 +87,7 @@ pub struct DoctorReport {
     /// Result of SQLite PRAGMA integrity_check ("ok" = healthy).
     pub db_integrity: Option<String>,
     pub clients: Vec<ClientStatus>,
+    pub adoption_warnings: Vec<String>,
 }
 
 impl fmt::Display for Client {
@@ -287,6 +290,7 @@ pub fn doctor(options: &InstallOptions) -> Result<DoctorReport> {
         let expected = path_to_string(&options.binary_path);
         let rule_installed = rule_installed(&target)?;
         let rule_stale = rule_is_stale(&target)?;
+        let rule_weak = rule_is_weak(&target)?;
         let hook_installed = if client == Client::Cursor && options.scope == Scope::User {
             cursor_hook_installed(&options.home_dir)
         } else {
@@ -301,9 +305,11 @@ pub fn doctor(options: &InstallOptions) -> Result<DoctorReport> {
             rule_path: target.path,
             rule_installed,
             rule_stale,
+            rule_weak,
             hook_installed,
         });
     }
+    let adoption_warnings = adoption_warnings(&clients);
 
     Ok(DoctorReport {
         binary_path: options.binary_path.clone(),
@@ -314,6 +320,7 @@ pub fn doctor(options: &InstallOptions) -> Result<DoctorReport> {
         corrupted_embeddings,
         db_integrity,
         clients,
+        adoption_warnings,
     })
 }
 
@@ -422,6 +429,8 @@ pub fn print_doctor_report(report: &DoctorReport) {
         println!("      config: {}", status.path.display());
         let rule_state = if status.rule_stale {
             "⚠ rule stale — run: palace install"
+        } else if status.rule_weak {
+            "⚠ rule weak — run: palace install so agents search memory before grep"
         } else if status.rule_installed {
             "✓ rule installed"
         } else {
@@ -440,6 +449,9 @@ pub fn print_doctor_report(report: &DoctorReport) {
     println!("  {}", "─".repeat(52));
     if report.drawer_count.unwrap_or(0) == 0 {
         println!("  Next: palace init <project> && palace mine <project>");
+    }
+    for warning in &report.adoption_warnings {
+        println!("  ⚠ {warning}");
     }
     println!();
 }
@@ -795,6 +807,53 @@ fn rule_is_stale(target: &RuleTarget) -> Result<bool> {
         RuleKind::ManagedBlock => find_managed_block(&text)?.is_some(),
     };
     Ok(has_legacy && !has_current)
+}
+
+fn rule_is_weak(target: &RuleTarget) -> Result<bool> {
+    if !target.path.exists() {
+        return Ok(false);
+    }
+    let text = read_text_file(&target.path)?;
+    if find_managed_block(&text)?.is_none() && target.kind == RuleKind::ManagedBlock {
+        return Ok(false);
+    }
+    let lower = text.to_lowercase();
+    let has_memory_first = lower.contains("memory-first");
+    let has_before_grep = lower.contains("before grep");
+    let has_code_first = lower.contains("code-search-first");
+    Ok(!(has_memory_first && has_before_grep && has_code_first))
+}
+
+fn adoption_warnings(clients: &[ClientStatus]) -> Vec<String> {
+    let mut warnings = Vec::new();
+    for status in clients {
+        let client = display_client_name(status.client);
+        if !status.configured {
+            warnings.push(format!(
+                "{client} is missing MCP config, so it cannot call Palace before grep."
+            ));
+        }
+        if status.rule_stale {
+            warnings.push(format!(
+                "{client} has a stale Palace rule; reinstall so it uses current memory tools."
+            ));
+        } else if status.rule_weak {
+            warnings.push(format!(
+                "{client} rule lacks memory before grep routing; reinstall so remembered context is searched first."
+            ));
+        }
+    }
+    warnings
+}
+
+fn display_client_name(client: Client) -> &'static str {
+    match client {
+        Client::Cursor => "Cursor",
+        Client::Codex => "Codex",
+        Client::Claude => "Claude Code",
+        Client::ClaudeDesktop => "Claude Desktop",
+        Client::All => "all",
+    }
 }
 
 fn read_text_file(path: &Path) -> Result<String> {

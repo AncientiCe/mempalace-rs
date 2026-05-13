@@ -245,6 +245,7 @@ palace gain - last 30d (palace_rs)
   Diary recalls      : 8
   Repeat Qs avoided  : 19
   p95 latency        : 41 ms
+  Tool latency       : palace_search(p50 18 ms, p95 41 ms)
   Top wings          : palace_rs(120), checkout(40)
 ```
 
@@ -255,12 +256,13 @@ Set `PALACE_GAIN_DISABLED=1` to disable usage recording. The legacy
 
 ## MCP Setup
 
-`palace install` is the normal setup command for all three major agentic coding
-clients. It writes both:
+`palace install` is the normal setup command for the four supported local agent
+clients: Cursor, Codex, Claude Code, and Claude Desktop. It writes both:
 
 - an MCP server entry that starts `palace mcp`
 - a small rule that tells the agent when to call `palace_status`,
-  `palace_search`, `palace_kg_query`, and `palace_diary_write`
+  `palace_search`, `palace_preference_search`, `palace_kg_query`, and
+  `palace_diary_write`
 
 ```bash
 palace install
@@ -273,6 +275,7 @@ What gets written by default:
 | Cursor | `~/.cursor/mcp.json` | `~/.cursor/rules/palace.mdc` |
 | Codex | `~/.codex/config.toml` | `~/.codex/AGENTS.md` |
 | Claude Code | `~/.claude/mcp_servers.json` | `~/.claude/CLAUDE.md` |
+| Claude Desktop | Claude Desktop config | `~/.claude/CLAUDE.md` |
 
 Existing 0.1.x installs that registered the server as `mempalace` are migrated
 to `palace` automatically the next time you run `palace install`.
@@ -307,6 +310,12 @@ Inspect the current setup:
 ```bash
 palace doctor
 ```
+
+The installed rule is memory-first for remembered context: decisions, prior
+fixes, conventions, preferences, prior commands, session history, and "what
+happened last time?" should use Palace before grep or code search. Grep remains
+the right first tool for current symbols, exact definitions, exact files, and
+implementation details that may have changed since the project was mined.
 
 Remove palace config:
 
@@ -376,6 +385,9 @@ graph operations, graph tunnels, hook acknowledgements, and agent diaries:
 |---|---|
 | `palace_status` | Palace overview + protocol |
 | `palace_gain` | MCP usage gains, estimated savings, and per-project value |
+| `palace_verify` | Verify MCP tools, database health, embeddings, and model cache |
+| `palace_recall_check` | Run project-memory probes and report expected-memory hits |
+| `palace_conflicts` | Surface likely stale or contradictory KG facts |
 | `palace_list_wings` | List wings with drawer counts |
 | `palace_list_rooms` | List rooms within a wing |
 | `palace_get_taxonomy` | Full wing → room → count tree |

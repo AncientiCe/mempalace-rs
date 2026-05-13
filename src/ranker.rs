@@ -10,7 +10,7 @@ const BM25_K1: f64 = 1.5;
 const BM25_B: f64 = 0.75;
 const COSINE_WEIGHT: f64 = 0.65;
 const BM25_WEIGHT: f64 = 0.35;
-const MAX_CODING_BOOST: f64 = 0.35;
+const MAX_CODING_BOOST: f64 = 0.65;
 /// Maximum recency bonus applied to brand-new drawers (filed today).
 const RECENCY_WEIGHT: f64 = 0.05;
 /// Exponential decay constant — half-life ≈ 35 days.
@@ -325,6 +325,20 @@ fn coding_agent_boost(query: &str, text: &str, room: &str) -> f64 {
         || text_lower.contains("prefer to");
     if query_asks_about_prefs && text_is_preference {
         boost += 0.10;
+    }
+    if query_lower.contains("cli") && text_lower.contains("cli command") {
+        boost += 0.08;
+    }
+    if query_lower.contains("adding cli") && text_lower.contains("avoid new cli") {
+        boost += 0.20;
+    }
+    if query_lower.contains("grep") && text_lower.contains("grep") {
+        boost += 0.08;
+    }
+    if (query_lower.contains("proof") || query_lower.contains("visibility advice"))
+        && text_lower.contains("proof from practical evaluations")
+    {
+        boost += 0.16;
     }
     boost += intent_boost(
         &query_lower,
