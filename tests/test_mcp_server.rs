@@ -405,6 +405,168 @@ fn export_returns_all_drawers() {
     assert_eq!(drawers.len(), 2);
 }
 
+// ── palace_import ──────────────────────────────────────────────────────────
+
+#[test]
+fn import_inserts_new_drawers() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+
+    // Export from a source DB with one drawer
+    let src = test_db();
+    store::add_drawer(
+        &src,
+        "w",
+        "r",
+        "import test content",
+        None,
+        "f.txt",
+        0,
+        "t",
+        3.0,
+    )
+    .unwrap();
+    let export_result =
+        palace::mcp_server::dispatch_tool(&src, &config, "palace_export", &serde_json::json!({}));
+    let export_json = serde_json::to_string(&export_result).unwrap();
+
+    // Import into the empty dest DB
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_import",
+        &serde_json::json!({"export_json": export_json}),
+    );
+    assert_eq!(result["inserted"], 1);
+    assert_eq!(result["skipped"], 0);
+}
+
+#[test]
+fn import_skips_existing_drawers() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+
+    store::add_drawer(&conn, "w", "r", "already here", None, "f.txt", 0, "t", 3.0).unwrap();
+
+    let export_result =
+        palace::mcp_server::dispatch_tool(&conn, &config, "palace_export", &serde_json::json!({}));
+    let export_json = serde_json::to_string(&export_result).unwrap();
+
+    // Import back into the same DB — all should be skipped
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_import",
+        &serde_json::json!({"export_json": export_json}),
+    );
+    assert_eq!(result["inserted"], 0);
+    assert_eq!(result["skipped"], 1);
+}
+
+#[test]
+fn import_returns_error_on_invalid_json() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_import",
+        &serde_json::json!({"export_json": "not valid json"}),
+    );
+    assert!(result.get("error").is_some());
+}
+
+// ── palace_upgrade_embeddings ──────────────────────────────────────────────
+
+#[test]
+fn upgrade_embeddings_returns_count() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+    store::add_drawer(
+        &conn,
+        "w",
+        "r",
+        "content to re-embed",
+        None,
+        "f.txt",
+        0,
+        "t",
+        3.0,
+    )
+    .unwrap();
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_upgrade_embeddings",
+        &serde_json::json!({}),
+    );
+    // May succeed or fail depending on model availability, but must return a
+    // structured response — never a panic.
+    assert!(result.get("reembedded").is_some() || result.get("error").is_some());
+}
+
+// ── palace_prune ───────────────────────────────────────────────────────────
+
+#[test]
+fn prune_removes_old_drawers() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+
+    // Insert a drawer then manually backdate it to 40 days ago
+    store::add_drawer(&conn, "w", "r", "old content", None, "f.txt", 0, "t", 3.0).unwrap();
+    conn.execute(
+        "UPDATE drawers SET created_at = datetime('now', '-40 days'), filed_at = datetime('now', '-40 days')",
+        [],
+    )
+    .unwrap();
+
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_prune",
+        &serde_json::json!({"older_than_days": 30}),
+    );
+    assert_eq!(result["pruned"], 1);
+    assert_eq!(store::count_drawers(&conn).unwrap(), 0);
+}
+
+#[test]
+fn prune_keeps_recent_drawers() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+
+    store::add_drawer(
+        &conn,
+        "w",
+        "r",
+        "recent content",
+        None,
+        "f.txt",
+        0,
+        "t",
+        3.0,
+    )
+    .unwrap();
+
+    let result = palace::mcp_server::dispatch_tool(
+        &conn,
+        &config,
+        "palace_prune",
+        &serde_json::json!({"older_than_days": 30}),
+    );
+    assert_eq!(result["pruned"], 0);
+    assert_eq!(store::count_drawers(&conn).unwrap(), 1);
+}
+
+#[test]
+fn prune_requires_older_than_days() {
+    let conn = test_db();
+    let config = palace::config::PalaceConfig::new();
+    let result =
+        palace::mcp_server::dispatch_tool(&conn, &config, "palace_prune", &serde_json::json!({}));
+    assert!(result.get("error").is_some());
+}
+
 // ── Wing/room counts ──────────────────────────────────────────────────────
 
 #[test]

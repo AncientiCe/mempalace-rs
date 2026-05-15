@@ -245,6 +245,26 @@ enum Commands {
         /// Path to the export JSON file produced by `palace export`
         file: PathBuf,
     },
+    /// Delete drawers filed more than N days ago
+    Prune {
+        /// Delete drawers filed more than this many days ago
+        #[arg(long)]
+        older_than_days: u32,
+        /// Preview what would be deleted without removing anything
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Re-embed all drawers using the current embedding model
+    ///
+    /// Run this after upgrading the embedding model to keep search quality consistent.
+    #[command(name = "upgrade-embeddings")]
+    UpgradeEmbeddings,
+    /// Show a chronological timeline of knowledge-graph facts
+    Timeline {
+        /// Filter to facts about this entity (optional)
+        #[arg(long)]
+        entity: Option<String>,
+    },
     /// Watch a project directory and re-mine changed files automatically
     Watch {
         /// Project directory (must contain palace.yaml)
@@ -601,6 +621,101 @@ pub fn run() -> Result<()> {
                 file.display(),
                 doc.total.saturating_sub(inserted)
             );
+        }
+
+        Commands::Prune {
+            older_than_days,
+            dry_run,
+        } => {
+            let db_path = config.palace_db_path();
+            if !db_path.exists() {
+                warn!("No palace found. Run: palace init <dir> && palace mine <dir>");
+                std::process::exit(1);
+            }
+            let conn = crate::db::open(&db_path)?;
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM drawers WHERE datetime(filed_at) <= datetime('now', printf('-%d days', ?1))",
+                rusqlite::params![older_than_days],
+                |row| row.get(0),
+            )?;
+            if dry_run {
+                println!("  [dry-run] Would prune {count} drawer(s) older than {older_than_days} day(s).");
+            } else {
+                conn.execute(
+                    "DELETE FROM drawers WHERE datetime(filed_at) <= datetime('now', printf('-%d days', ?1))",
+                    rusqlite::params![older_than_days],
+                )?;
+                println!("  Pruned {count} drawer(s) older than {older_than_days} day(s).");
+            }
+        }
+
+        Commands::UpgradeEmbeddings => {
+            let db_path = config.palace_db_path();
+            if !db_path.exists() {
+                warn!("No palace found. Run: palace init <dir> && palace mine <dir>");
+                std::process::exit(1);
+            }
+            let conn = crate::db::open(&db_path)?;
+            let ids_and_content: Vec<(String, String)> = {
+                let mut stmt = conn.prepare("SELECT id, content FROM drawers ORDER BY rowid")?;
+                let rows = stmt
+                    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                rows
+            };
+            let total = ids_and_content.len();
+            let mut reembedded = 0usize;
+            let mut errors = 0usize;
+            for (id, content) in &ids_and_content {
+                match crate::embedder::embed_one(content) {
+                    Ok(emb) => {
+                        let bytes: Vec<u8> = emb.iter().flat_map(|f| f.to_le_bytes()).collect();
+                        if conn
+                            .execute(
+                                "UPDATE drawers SET embedding = ?1 WHERE id = ?2",
+                                rusqlite::params![bytes, id],
+                            )
+                            .is_ok()
+                        {
+                            reembedded += 1;
+                        } else {
+                            errors += 1;
+                        }
+                    }
+                    Err(_) => errors += 1,
+                }
+            }
+            println!("  Re-embedded {reembedded}/{total} drawer(s). Errors: {errors}.");
+        }
+
+        Commands::Timeline { entity } => {
+            let db_path = config.palace_db_path();
+            if !db_path.exists() {
+                warn!("No palace found. Run: palace init <dir> && palace mine <dir>");
+                std::process::exit(1);
+            }
+            let conn = crate::db::open(&db_path)?;
+            let timeline = crate::knowledge_graph::timeline(&conn, entity.as_deref())?;
+            if timeline.is_empty() {
+                println!("  No KG facts found.");
+            } else {
+                for entry in &timeline {
+                    println!(
+                        "  {} | {} {} {} [{}]",
+                        entry.valid_from.as_deref().unwrap_or("unknown"),
+                        entry.subject,
+                        entry.predicate,
+                        entry.object,
+                        if entry.current {
+                            "active"
+                        } else {
+                            "superseded"
+                        }
+                    );
+                }
+                println!("  {} fact(s).", timeline.len());
+            }
         }
 
         Commands::Watch { dir, wing } => {

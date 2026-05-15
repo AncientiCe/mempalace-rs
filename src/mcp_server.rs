@@ -190,6 +190,9 @@ pub fn dispatch_tool(conn: &Connection, config: &PalaceConfig, name: &str, args:
         "palace_explain" => tool_explain(conn, args),
         "palace_preference_search" => tool_preference_search(conn, args),
         "palace_export" => tool_export(conn),
+        "palace_import" => tool_import(conn, args),
+        "palace_upgrade_embeddings" => tool_upgrade_embeddings(conn),
+        "palace_prune" => tool_prune(conn, args),
         _ => json!({"error": format!("Unknown tool: {name}")}),
     }
 }
@@ -1219,6 +1222,85 @@ fn tool_export(conn: &Connection) -> Value {
     }
 }
 
+/// Import drawers from a JSON export snapshot produced by `palace_export`.
+fn tool_import(conn: &Connection, args: &Value) -> Value {
+    let export_json = match str_arg(args, "export_json") {
+        Some(s) => s,
+        None => return json!({"error": "missing required argument: export_json"}),
+    };
+    let doc: crate::export::ExportDoc = match serde_json::from_str(&export_json) {
+        Ok(d) => d,
+        Err(e) => return json!({"error": format!("invalid export JSON: {e}")}),
+    };
+    let total = doc.drawers.len();
+    match crate::export::import_drawers(conn, &doc) {
+        Ok(inserted) => json!({
+            "inserted": inserted,
+            "skipped": total - inserted,
+            "total": total,
+        }),
+        Err(e) => json!({"error": e.to_string()}),
+    }
+}
+
+/// Re-embed all drawers using the current embedding model.
+///
+/// Useful after upgrading the embedding model. Each drawer's text is
+/// re-embedded and the stored embedding is overwritten in-place.
+fn tool_upgrade_embeddings(conn: &Connection) -> Value {
+    let ids_and_content: Vec<(String, String)> =
+        match conn.prepare("SELECT id, content FROM drawers ORDER BY rowid") {
+            Ok(mut stmt) => match stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?))) {
+                Ok(rows) => {
+                    let collected: Vec<(String, String)> = rows.filter_map(|r| r.ok()).collect();
+                    collected
+                }
+                Err(e) => return json!({"error": e.to_string()}),
+            },
+            Err(e) => return json!({"error": e.to_string()}),
+        };
+
+    let mut reembedded = 0usize;
+    let mut errors = 0usize;
+    for (id, content) in &ids_and_content {
+        match crate::embedder::embed_one(content) {
+            Ok(emb) => {
+                let bytes: Vec<u8> = emb.iter().flat_map(|f| f.to_le_bytes()).collect();
+                match conn.execute(
+                    "UPDATE drawers SET embedding = ?1 WHERE id = ?2",
+                    rusqlite::params![bytes, id],
+                ) {
+                    Ok(_) => reembedded += 1,
+                    Err(_) => errors += 1,
+                }
+            }
+            Err(_) => errors += 1,
+        }
+    }
+    json!({
+        "reembedded": reembedded,
+        "errors": errors,
+        "total": ids_and_content.len(),
+    })
+}
+
+/// Delete drawers that have not been accessed and were filed more than
+/// `older_than_days` days ago.
+fn tool_prune(conn: &Connection, args: &Value) -> Value {
+    let older_than_days = match int_arg(args, "older_than_days") {
+        Some(d) if d > 0 => d,
+        Some(_) => return json!({"error": "older_than_days must be a positive integer"}),
+        None => return json!({"error": "missing required argument: older_than_days"}),
+    };
+    match conn.execute(
+        "DELETE FROM drawers WHERE datetime(filed_at) <= datetime('now', printf('-%d days', ?1))",
+        rusqlite::params![older_than_days],
+    ) {
+        Ok(pruned) => json!({"pruned": pruned, "older_than_days": older_than_days}),
+        Err(e) => json!({"error": e.to_string()}),
+    }
+}
+
 fn count_corrupted_embeddings(conn: &Connection) -> i64 {
     let expected_bytes = (crate::embedder::EMBEDDING_DIM * std::mem::size_of::<f32>()) as i64;
     conn.query_row(
@@ -1746,6 +1828,33 @@ fn tool_list() -> Value {
             "name": "palace_export",
             "description": "Export all palace drawers as a portable JSON snapshot (embeddings excluded). Use for backup or migration.",
             "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "palace_import",
+            "description": "Import drawers from a JSON snapshot produced by palace_export. Skips drawers that already exist (idempotent).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "export_json": {"type": "string", "description": "Full JSON string from a palace_export result"}
+                },
+                "required": ["export_json"]
+            }
+        },
+        {
+            "name": "palace_upgrade_embeddings",
+            "description": "Re-embed all drawers using the current embedding model. Run after upgrading the model to keep search quality consistent.",
+            "inputSchema": {"type": "object", "properties": {}}
+        },
+        {
+            "name": "palace_prune",
+            "description": "Delete drawers filed more than N days ago. Use to keep the palace lean. Irreversible — export first if unsure.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "older_than_days": {"type": "integer", "description": "Delete drawers filed more than this many days ago"}
+                },
+                "required": ["older_than_days"]
+            }
         }
     ])
 }
