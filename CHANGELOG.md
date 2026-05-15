@@ -4,6 +4,37 @@ All notable changes to `palace-rs` (formerly `mempalace-rs`) are documented here
 
 This Rust implementation uses its own `0.x` version track.
 
+## [0.2.2] - 2026-05-15
+
+### Added
+
+- **`palace seed-adoption-facts`** CLI command and **`palace_seed_adoption_facts`**
+  MCP tool to seed durable KG facts for the four supported clients, the
+  memory-first protocol, quality gates, and project role. The seed is
+  idempotent so repeated runs add only missing active facts.
+- KG seed helpers for adoption facts and safe fact replacement, including
+  invalidating an old active fact before inserting the new one.
+
+### Changed
+
+- Installed agent rules now require the full memory lifecycle: `palace_status`
+  plus `palace_session_context` at session start, `palace_diary_search` before
+  continuing prior work, KG tools for durable facts, repeat-question recall, and
+  explicit memory-vs-code-search routing.
+- `palace_status` protocol text now mirrors the stronger four-agent memory
+  workflow so MCP clients see the same guidance at runtime.
+- `palace doctor` weak-rule detection now checks for session warm-start, diary
+  recall, KG add/query/invalidate, repeat-question routing, and memory routing.
+- `palace gain` accounting now counts non-empty `palace_session_context` and
+  `palace_diary_search` calls as diary recalls, recognizes additional KG query
+  response shapes as KG facts, and tracks repeated diary queries as repeat
+  questions avoided.
+
+### Fixed
+
+- Renamed the install-rule integration test binary to avoid Windows treating it
+  like an installer that requires elevation.
+
 ## [0.2.1] - 2026-05-13
 
 ### Added
