@@ -21,21 +21,10 @@ fn locale_loader_contains_non_latin_candidate_patterns() {
 #[test]
 fn config_reads_entity_language_env_override() {
     let _lock = ENV_LOCK.lock().unwrap();
-    std::env::remove_var("MEMPALACE_ENTITY_LANGUAGES");
+    std::env::remove_var("PALACE_ENTITY_LANGUAGES");
     std::env::set_var("PALACE_ENTITY_LANGUAGES", "PT-BR,zh_CN");
     let config = PalaceConfig::new();
     let result = config.entity_languages();
     std::env::remove_var("PALACE_ENTITY_LANGUAGES");
-    assert_eq!(result, vec!["pt-br", "zh-cn"]);
-}
-
-#[test]
-fn legacy_entity_language_env_var_still_works() {
-    let _lock = ENV_LOCK.lock().unwrap();
-    std::env::remove_var("PALACE_ENTITY_LANGUAGES");
-    std::env::set_var("MEMPALACE_ENTITY_LANGUAGES", "PT-BR,zh_CN");
-    let config = PalaceConfig::new();
-    let result = config.entity_languages();
-    std::env::remove_var("MEMPALACE_ENTITY_LANGUAGES");
     assert_eq!(result, vec!["pt-br", "zh-cn"]);
 }

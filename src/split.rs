@@ -234,11 +234,7 @@ pub fn run(
 
     let src_dir = source
         .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var("MEMPALACE_SOURCE_DIR")
-                .ok()
-                .map(PathBuf::from)
-        })
+        .or_else(|| std::env::var("PALACE_SOURCE_DIR").ok().map(PathBuf::from))
         .unwrap_or_else(|| home.join("Desktop/transcripts"));
 
     let config_dir = home.join(".palace");

@@ -4,6 +4,39 @@ All notable changes to `palace-rs` (formerly `mempalace-rs`) are documented here
 
 This Rust implementation uses its own `0.x` version track.
 
+## [0.3.0] - 2026-05-15
+
+### Removed
+
+- **`mempalace` shim binary** — the backwards-compatibility binary that
+  re-exec'd `palace` with a deprecation notice has been removed as promised
+  in 0.2.0. If you are still calling `mempalace` in scripts or MCP configs,
+  replace it with `palace`. Run `palace install` to update MCP client configs
+  automatically.
+- **`MEMPALACE_PALACE_PATH` and `MEMPALACE_ENTITY_LANGUAGES` environment
+  variables** — only the `PALACE_*` equivalents are now honoured.
+  Update any scripts or CI that set the old names.
+- **`MEMPALACE_SOURCE_DIR`, `MEMPALACE_PROJECT`, `MEMPALACE_GAIN_DISABLED`
+  environment variables** — replaced by `PALACE_SOURCE_DIR`,
+  `PALACE_PROJECT`, and `PALACE_GAIN_DISABLED` respectively.
+- **`MEMPALACE_OPENAI_COMPAT_BASE_URL`** — replaced by
+  `PALACE_OPENAI_COMPAT_BASE_URL`.
+- **`PalaceConfig::migrate_legacy_dir` / `migrate_legacy_from`** — the
+  automatic `~/.mempalace → ~/.palace` directory migration has been removed.
+  Users who have not yet migrated should copy their data manually or use
+  an earlier release to perform the migration first.
+- **`MempalaceConfig` type alias** — removed; use `PalaceConfig` directly.
+- **Legacy `mempalace.yaml` / `mempal.yaml` project config fallbacks** —
+  `palace mine` now requires a `palace.yaml` in the project root.
+  Run `palace init` to generate one if it is missing.
+
+### Migration from 0.2.x
+
+- Replace all `mempalace` binary invocations with `palace`.
+- Rename `MEMPALACE_*` environment variables to their `PALACE_*` equivalents.
+- Rename `mempalace.yaml` / `mempal.yaml` project config files to
+  `palace.yaml` (or run `palace init` to regenerate).
+
 ## [0.2.2] - 2026-05-15
 
 ### Added

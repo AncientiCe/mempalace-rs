@@ -332,7 +332,7 @@ fn str_arg(value: &Value, key: &str) -> Option<String> {
 }
 
 fn resolve_project() -> String {
-    std::env::var("MEMPALACE_PROJECT")
+    std::env::var("PALACE_PROJECT")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -347,7 +347,7 @@ fn resolve_project() -> String {
 }
 
 fn telemetry_disabled() -> bool {
-    std::env::var("MEMPALACE_GAIN_DISABLED")
+    std::env::var("PALACE_GAIN_DISABLED")
         .ok()
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
         .unwrap_or(false)

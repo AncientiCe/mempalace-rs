@@ -24,7 +24,7 @@ const SKIP_DIRS: &[&str] = &[
     "dist",
     "build",
     ".next",
-    ".mempalace",
+    ".palace",
     "tool-results",
     "memory",
 ];

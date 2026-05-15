@@ -1,5 +1,5 @@
 //! Room detection from folder structure and filename patterns.
-//! Writes palace.yaml for a project (reads mempalace.yaml as a legacy fallback).
+//! Writes and reads palace.yaml for a project.
 //! Port of room_detector_local.py.
 
 use anyhow::Result;
@@ -263,21 +263,16 @@ pub fn save_config(project_dir: &Path, project_name: &str, rooms: &[Room]) -> Re
     Ok(config_path)
 }
 
-/// Load an existing palace.yaml (falls back to mempalace.yaml, then mempal.yaml for legacy projects).
+/// Load an existing palace.yaml for the project.
 pub fn load_config(project_dir: &Path) -> Result<ProjectConfig> {
-    // Try new name first, then legacy names for backwards compatibility.
-    let candidates = [
-        project_dir.join("palace.yaml"),
-        project_dir.join("mempalace.yaml"),
-        project_dir.join("mempal.yaml"),
-    ];
-    let path = candidates.into_iter().find(|p| p.exists()).ok_or_else(|| {
-        anyhow::anyhow!(
+    let path = project_dir.join("palace.yaml");
+    if !path.exists() {
+        anyhow::bail!(
             "No palace.yaml found in {}. Run: palace init {}",
             project_dir.display(),
             project_dir.display()
-        )
-    })?;
+        );
+    }
     let content = std::fs::read_to_string(&path)?;
     let config: ProjectConfig = serde_yaml::from_str(&content)?;
     Ok(config)

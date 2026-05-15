@@ -24,7 +24,6 @@ use crate::store::{
 /// Run the MCP stdio server. Blocks until stdin closes.
 pub fn run() -> Result<()> {
     let config = PalaceConfig::new();
-    config.migrate_legacy_dir();
     let db_path = config.palace_db_path();
 
     // Open palace DB (or create if first run)

@@ -1,8 +1,8 @@
 //! Project file ingestor.
 //!
-//! Reads palace.yaml (or mempalace.yaml as a legacy fallback), walks the project
-//! with gitignore respect (via `ignore` crate), chunks text (~800 chars, 100 overlap),
-//! routes to rooms, embeds and stores drawers.
+//! Reads palace.yaml, walks the project with gitignore respect (via `ignore`
+//! crate), chunks text (~800 chars, 100 overlap), routes to rooms, embeds
+//! and stores drawers.
 //!
 //! File reading and embedding are parallelised with Rayon; SQLite writes remain
 //! single-threaded (rusqlite Connection is not Send).
@@ -29,10 +29,6 @@ pub static READABLE_EXTENSIONS: &[&str] = &[
 pub static SKIP_FILENAMES: &[&str] = &[
     "palace.yaml",
     "palace.yml",
-    "mempalace.yaml",
-    "mempalace.yml",
-    "mempal.yaml",
-    "mempal.yml",
     ".gitignore",
     "package-lock.json",
 ];

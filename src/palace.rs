@@ -91,7 +91,6 @@ impl PalaceBuilder {
 
     /// Open (or create) a palace at the path resolved by the config.
     pub fn build(self) -> Result<Palace> {
-        self.config.migrate_legacy_dir();
         let db_path = self.config.palace_db_path();
         let conn = crate::db::open(&db_path)
             .with_context(|| format!("opening palace at {}", db_path.display()))?;

@@ -1,23 +1,12 @@
 //! Configuration system for Palace.
 //!
 //! Load order: env vars > ~/.palace/config.json > defaults.
-//!
-//! # Upgrade notes (0.1.x → 0.2.0)
-//!
-//! The config/data directory changed from `~/.mempalace` to `~/.palace`.
-//! On first open, `PalaceConfig::migrate_legacy_dir()` copies the old directory
-//! into the new one (idempotent, never deletes the source).
-//!
-//! Environment variables changed from `MEMPALACE_*` to `PALACE_*`.
-//! The old `MEMPALACE_*` names are still accepted in 0.2.x with a printed
-//! deprecation notice; they will stop working in 0.3.0.
 
 use anyhow::Result;
 use directories::UserDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tracing::warn;
 
 pub const DEFAULT_COLLECTION_NAME: &str = "palace_drawers";
 
@@ -138,10 +127,6 @@ pub struct PalaceConfig {
     file_config: FileConfig,
 }
 
-/// Backwards-compatibility alias. Deprecated in 0.2.0; removed in 0.3.0.
-#[deprecated(since = "0.2.0", note = "renamed to PalaceConfig")]
-pub type MempalaceConfig = PalaceConfig;
-
 impl PalaceConfig {
     pub fn new() -> Self {
         Self::with_config_dir(None)
@@ -174,52 +159,6 @@ impl PalaceConfig {
             .unwrap_or_else(|| PathBuf::from(".palace"))
     }
 
-    /// Migrate the legacy `~/.mempalace` directory to `~/.palace`.
-    ///
-    /// This performs a per-file merge: any file in the legacy directory that
-    /// does not yet exist in the new directory is copied over. Files that
-    /// already exist in the new directory (e.g. a freshly-written `config.json`
-    /// from `palace init`) are left untouched, so the migration is safe to run
-    /// even when the new directory has been partially initialised.
-    ///
-    /// A breadcrumb file is left in the source directory so users know what
-    /// happened. The source is never deleted automatically.
-    pub fn migrate_legacy_dir(&self) {
-        let legacy_dir = UserDirs::new()
-            .map(|u| u.home_dir().join(".mempalace"))
-            .unwrap_or_else(|| PathBuf::from(".mempalace"));
-        self.migrate_legacy_from(&legacy_dir);
-    }
-
-    /// Migrate from an explicit legacy directory into this config's directory.
-    ///
-    /// Exposed for tests and for callers that store the legacy data in a
-    /// non-default location. Idempotent: re-running never overwrites files
-    /// that already exist in the destination.
-    pub fn migrate_legacy_from(&self, legacy_dir: &Path) {
-        let new_dir = &self.config_dir;
-        if !legacy_dir.exists() {
-            return;
-        }
-        // Avoid copying onto ourselves if a user points the new config at the
-        // legacy directory.
-        if let (Ok(a), Ok(b)) = (legacy_dir.canonicalize(), new_dir.canonicalize()) {
-            if a == b {
-                return;
-            }
-        }
-        if let Err(e) = merge_dir(legacy_dir, new_dir) {
-            warn!(error = %e, "could not migrate legacy directory to {}", new_dir.display());
-            return;
-        }
-        let breadcrumb = legacy_dir.join("MIGRATED_TO_PALACE.txt");
-        let _ = std::fs::write(
-            &breadcrumb,
-            "This directory has been migrated to ~/.palace by palace-rs 0.2.0.\n\
-             You may delete this directory once you have verified the migration.\n",
-        );
-    }
-
     /// Path to the SQLite palace database file.
     pub fn palace_db_path(&self) -> PathBuf {
         self.palace_path().join("palace.db")
@@ -227,19 +166,7 @@ impl PalaceConfig {
 
     /// Palace data directory.
     pub fn palace_path(&self) -> PathBuf {
-        // New env var (0.2.0+)
         if let Ok(v) = std::env::var("PALACE_PALACE_PATH") {
-            return PathBuf::from(v);
-        }
-        // Legacy env vars (0.1.x) — accepted with deprecation warning in 0.2.x
-        if let Ok(v) = std::env::var("MEMPALACE_PALACE_PATH") {
-            warn!(
-                "MEMPALACE_PALACE_PATH is deprecated; \
-                 use PALACE_PALACE_PATH instead. Support will be removed in 0.3.0."
-            );
-            return PathBuf::from(v);
-        }
-        if let Ok(v) = std::env::var("MEMPAL_PALACE_PATH") {
             return PathBuf::from(v);
         }
         self.file_config
@@ -283,22 +210,7 @@ impl PalaceConfig {
     }
 
     pub fn entity_languages(&self) -> Vec<String> {
-        // New env var (0.2.0+)
         if let Ok(value) = std::env::var("PALACE_ENTITY_LANGUAGES") {
-            let langs: Vec<String> = value
-                .split(',')
-                .filter_map(crate::i18n::canonical_language)
-                .collect();
-            if !langs.is_empty() {
-                return langs;
-            }
-        }
-        // Legacy env var (0.1.x) — accepted with deprecation warning in 0.2.x
-        if let Ok(value) = std::env::var("MEMPALACE_ENTITY_LANGUAGES") {
-            warn!(
-                "MEMPALACE_ENTITY_LANGUAGES is deprecated; \
-                 use PALACE_ENTITY_LANGUAGES instead. Support will be removed in 0.3.0."
-            );
             let langs: Vec<String> = value
                 .split(',')
                 .filter_map(crate::i18n::canonical_language)
@@ -350,27 +262,4 @@ impl Default for PalaceConfig {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Recursively merge `src` into `dst`: copy files that don't yet exist at the
-/// destination, descend into directories, and leave existing destination files
-/// untouched. The migration breadcrumb is skipped so re-running never produces
-/// a stale copy in the new directory.
-fn merge_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        if name == "MIGRATED_TO_PALACE.txt" {
-            continue;
-        }
-        let dst_path = dst.join(&name);
-        let file_type = entry.file_type()?;
-        if file_type.is_dir() {
-            merge_dir(&entry.path(), &dst_path)?;
-        } else if !dst_path.exists() {
-            std::fs::copy(entry.path(), &dst_path)?;
-        }
-    }
-    Ok(())
 }

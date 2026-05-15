@@ -1,6 +1,6 @@
 [package]
 name = "palace-rs"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 description = "Local memory palace for AI assistants — Rust edition"
 license = "MIT"
@@ -15,13 +15,6 @@ categories = ["database", "text-processing"]
 [[bin]]
 name = "palace"
 path = "src/main.rs"
-required-features = ["cli"]
-
-# Backwards-compat shim: prints a deprecation notice and re-exec's palace.
-# Removed in 0.3.0.
-[[bin]]
-name = "mempalace"
-path = "src/bin/mempalace.rs"
 required-features = ["cli"]
 
 [lib]
