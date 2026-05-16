@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use palace::gain::{summarize, GainOptions, SinceWindow};
+use palace::gain::{history, render_history, render_text, summarize, GainOptions, SinceWindow};
 use palace::usage::{insert_event, UsageEvent, UsageSession};
 use serde_json::json;
 use std::time::Duration as StdDuration;
@@ -40,6 +40,37 @@ fn empty_gain_report_is_zeroed() {
     assert_eq!(report.hit_rate, 0.0);
     assert_eq!(report.tokens_saved_est, 0);
     assert!(report.per_project.is_empty());
+}
+
+#[test]
+fn rendered_gain_summary_uses_palace_branding() {
+    let conn = palace::db::open_in_memory().expect("open test db");
+    let report = summarize(&conn, &options(None, SinceWindow::All)).expect("summarize");
+
+    let text = render_text(&report);
+
+    assert!(text.starts_with("Palace gain - all time (all projects)\n"));
+    assert!(!text.contains("MemPalace"));
+}
+
+#[test]
+fn rendered_gain_history_uses_palace_branding() {
+    let conn = palace::db::open_in_memory().expect("open test db");
+
+    let empty = render_history(&[]);
+    assert_eq!(empty, "No Palace gain history yet.\n");
+    assert!(!empty.contains("MemPalace"));
+
+    insert_event(
+        &conn,
+        &event(Utc::now().to_rfc3339(), "alpha", "palace_search", "hit"),
+    )
+    .expect("insert event");
+    let events = history(&conn, &options(None, SinceWindow::All), 20).expect("history");
+    let text = render_history(&events);
+
+    assert!(text.starts_with("Palace gain history\n"));
+    assert!(!text.contains("MemPalace"));
 }
 
 #[test]

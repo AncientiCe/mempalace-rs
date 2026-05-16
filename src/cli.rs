@@ -458,9 +458,9 @@ pub fn run() -> Result<()> {
                         }))?
                     );
                 } else if let Some(project) = project {
-                    println!("Deleted {deleted} MemPalace gain events for project {project}.");
+                    println!("Deleted {deleted} Palace gain events for project {project}.");
                 } else {
-                    println!("Deleted {deleted} MemPalace gain events.");
+                    println!("Deleted {deleted} Palace gain events.");
                 }
                 return Ok(());
             }

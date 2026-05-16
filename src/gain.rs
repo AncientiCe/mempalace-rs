@@ -213,7 +213,7 @@ pub fn render_text(report: &GainReport) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "MemPalace gain - {} ({})\n  Tool calls         : {}   (sessions: {})\n  Hit rate           : {:.0}%   (search hits {}/{})\n  Tokens saved (est) : ~{}\n  Re-index skipped   : {}    (duplicate drawers avoided)\n  KG facts recalled  : {}\n  Diary recalls      : {}\n  Repeat Qs avoided  : {}\n  p95 latency        : {} ms\n  Tool latency       : {}\n  Top wings          : {}\n  Top projects       : {}\n",
+        "Palace gain - {} ({})\n  Tool calls         : {}   (sessions: {})\n  Hit rate           : {:.0}%   (search hits {}/{})\n  Tokens saved (est) : ~{}\n  Re-index skipped   : {}    (duplicate drawers avoided)\n  KG facts recalled  : {}\n  Diary recalls      : {}\n  Repeat Qs avoided  : {}\n  p95 latency        : {} ms\n  Tool latency       : {}\n  Top wings          : {}\n  Top projects       : {}\n",
         report.window,
         project,
         format_number(report.tool_calls),
@@ -243,9 +243,9 @@ pub fn render_text(report: &GainReport) -> String {
 
 pub fn render_history(events: &[GainHistoryEvent]) -> String {
     if events.is_empty() {
-        return "No MemPalace gain history yet.\n".to_string();
+        return "No Palace gain history yet.\n".to_string();
     }
-    let mut lines = vec!["MemPalace gain history".to_string()];
+    let mut lines = vec!["Palace gain history".to_string()];
     for event in events {
         let scope = match (&event.wing, &event.room) {
             (Some(wing), Some(room)) => format!(" {wing}/{room}"),
